@@ -27,3 +27,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         with:
           args: --bundles app,dmg
+
+      - name: Upload macOS installers
+        uses: actions/upload-artifact@v0
+        with:
+          name: AV-Engineering-macOS
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app
+          if-no-files-found: error
