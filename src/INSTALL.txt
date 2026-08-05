@@ -1,0 +1,14 @@
+INSTALLATIE - EENMALIG UITVOEREN
+
+Open PowerShell in:
+client/applatest
+
+Voer uit:
+
+npm install html-to-image@1.11.11 jspdf
+
+Daarna:
+npm run dev
+
+html-to-image is vastgezet op 1.11.11 omdat React Flow die versie gebruikt
+in het officiële download-image voorbeeld.

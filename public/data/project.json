@@ -1,0 +1,107 @@
+{
+  "$schema_version": "1.0",
+  "project": {
+    "name": "Demo Broadcast Studio",
+    "facility_id": 42,
+    "created_by": "Alex Vermeulen",
+    "location": "Hilversum"
+  },
+  "types": [
+    {
+      "mfg": "BMD",
+      "model": "ATEM-1ME-4K",
+      "prodtype": "VMIX",
+      "revno": "0",
+      "rack_u": 1,
+      "short_desc": "ATEM 1 M/E Production Studio 4K",
+      "ports": [
+        {"label": "SDI-IN-1", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 0},
+        {"label": "SDI-IN-2", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 1},
+        {"label": "SDI-IN-3", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 2},
+        {"label": "SDI-IN-4", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 3},
+        {"label": "SDI-IN-5", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 4},
+        {"label": "SDI-IN-6", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 5},
+        {"label": "SDI-IN-7", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 6},
+        {"label": "SDI-IN-8", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 7},
+        {"label": "SDI-PGM-1", "direction": "O", "signal": "DGV", "connector": "BNC", "pos": 10},
+        {"label": "SDI-PGM-2", "direction": "O", "signal": "DGV", "connector": "BNC", "pos": 11},
+        {"label": "SDI-AUX-1", "direction": "O", "signal": "DGV", "connector": "BNC", "pos": 12},
+        {"label": "SDI-AUX-2", "direction": "O", "signal": "DGV", "connector": "BNC", "pos": 13},
+        {"label": "AUDIO-IN-L", "direction": "I", "signal": "AUD", "connector": "TRS", "pos": 20},
+        {"label": "AUDIO-IN-R", "direction": "I", "signal": "AUD", "connector": "TRS", "pos": 21},
+        {"label": "LAN", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 30},
+        {"label": "USB-C", "direction": "O", "signal": "DGV", "connector": "USB", "pos": 31}
+      ]
+    },
+    {
+      "mfg": "ARS",
+      "model": "720XP-24Y-2C",
+      "prodtype": "SW",
+      "revno": "0",
+      "rack_u": 1,
+      "short_desc": "Arista 7020TR-48 24x1G + 2x10G switch",
+      "needs_review": [
+        {
+          "field": "rack_u",
+          "reason": "Op datasheet aangeduid als 1U, bevestigen bij installatie"
+        }
+      ],
+      "ports": [
+        {"label": "ETH-01", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 0},
+        {"label": "ETH-02", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 1},
+        {"label": "ETH-03", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 2},
+        {"label": "ETH-04", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 3},
+        {"label": "ETH-05", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 4},
+        {"label": "ETH-06", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 5},
+        {"label": "ETH-07", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 6},
+        {"label": "ETH-08", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 7},
+        {"label": "SFP-01", "direction": "I", "signal": "DAT", "connector": "SFP+", "pos": 24},
+        {"label": "SFP-02", "direction": "I", "signal": "DAT", "connector": "SFP+", "pos": 25},
+        {"label": "MGMT", "direction": "I", "signal": "DAT", "connector": "RJ45", "pos": 30}
+      ]
+    },
+    {
+      "mfg": "SNY",
+      "model": "HDC-3500",
+      "prodtype": "CAM",
+      "revno": "0",
+      "rack_u": 0,
+      "short_desc": "Sony HDC-3500 system camera",
+      "ports": [
+        {"label": "FIBER", "direction": "L", "signal": "DGV", "connector": "LEMO", "pos": 0,
+         "needs_review": "Hybride fiber-connector, leverancier-specifiek (LEMO 3K.93C)"},
+        {"label": "SDI-OUT", "direction": "O", "signal": "DGV", "connector": "BNC", "pos": 1},
+        {"label": "RET-IN", "direction": "I", "signal": "DGV", "connector": "BNC", "pos": 2},
+        {"label": "INTERCOM", "direction": "L", "signal": "AUD", "connector": "XLR", "pos": 10}
+      ]
+    }
+  ],
+  "devices": [
+    {
+      "sysname": "CR1-ATEM01",
+      "type_ref": "BMD/ATEM-1ME-4K",
+      "rack": "RACK-CR1",
+      "rack_level": 5,
+      "location": "Control Room 1"
+    },
+    {
+      "sysname": "CR1-SW01",
+      "type_ref": "ARS/720XP-24Y-2C",
+      "rack": "RACK-CR1",
+      "rack_level": 10,
+      "location": "Control Room 1"
+    },
+    {
+      "sysname": "STU-CAM01",
+      "type_ref": "SNY/HDC-3500",
+      "rack": "FLOOR",
+      "location": "Studio A"
+    },
+    {
+      "sysname": "STU-CAM02",
+      "type_ref": "SNY/HDC-3500",
+      "rack": "FLOOR",
+      "location": "Studio A"
+    }
+  ]
+}
