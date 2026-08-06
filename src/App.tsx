@@ -30,6 +30,7 @@ import { DeviceInstanceEditor } from './DeviceInstanceEditor'
 import { PdfExportDialog } from './PdfExportDialog'
 import { SettingsDialog } from './SettingsDialog'
 import { CableNumberEditor } from './CableNumberEditor'
+import { LeftSidebar } from './layout/LeftSidebar'
 import type {
   CableDisplayMode,
   CableNumberContext,
@@ -2213,6 +2214,8 @@ function App() {
       </div>
 
       <div className="editor-workspace">
+        <LeftSidebar />
+        
         <DeviceLibrary
           types={libraryTypes}
           devices={projectDevices}

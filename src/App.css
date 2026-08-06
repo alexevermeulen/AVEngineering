@@ -1539,3 +1539,9 @@ button {
   padding: 18px 12px;
   text-align: center;
 }
+.editor-workspace > .explorer-panel {
+  width: 250px;
+  min-width: 250px;
+  flex: 0 0 250px;
+  border-right: 1px solid #cbd5e1;
+}
