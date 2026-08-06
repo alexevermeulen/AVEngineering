@@ -1,528 +1,489 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background,
-  ConnectionLineType,
-  Controls,
-  Handle,
-  MiniMap,
-  Position,
+
   ReactFlow,
-  addEdge,
   useEdgesState,
   useNodesState,
-  type Connection,
-  type Edge,
-  type IsValidConnection,
-  type Node,
-  type NodeProps,
   type ReactFlowInstance,
+  type Viewport,
 } from '@xyflow/react'
 
 import '@xyflow/react/dist/style.css'
 import './App.css'
 
-type PortDirection = 'I' | 'O' | 'L'
-type Signal = 'DGV' | 'DAT' | 'AUD' | 'CTRL' | 'PWR' | string
-type ToolMode = 'select' | 'source-feather' | 'destination-feather' | 'bus'
+import {
+  DeviceNodeComponent,
+  type DeviceNode,
+} from './DeviceNode'
+import {
+  CableEdgeComponent,
+  type CableEdge,
+} from './CableEdge'
+import {
+  GraphicURouteNodeComponent,
+  type GraphicURouteNode,
+} from './GraphicURouteNode'
+import { REACT_FLOW_CONFIG } from './canvas/ReactFlowConfig'
+import { ReactFlowViewport } from './canvas/ReactFlowViewport'
+import { CanvasView } from './canvas/CanvasView'
+import { DeviceLibrary } from './DeviceLibrary'
+import { DeviceInstanceEditor } from './DeviceInstanceEditor'
+import { PdfExportDialog } from './PdfExportDialog'
+import { SettingsDialog } from './SettingsDialog'
+import { CableNumberEditor } from './CableNumberEditor'
+import { LeftSidebar } from './layout/LeftSidebar'
+import { RightSidebar } from './layout/RightSidebar'
+import { Workspace } from './layout/Workspace'
 
-type Port = {
-  label: string
-  direction: PortDirection
-  signal: Signal
-  connector: string
-  pos: number
-  needs_review?: string
+import type {
+  CableDisplayMode,
+  CableNumberContext,
+  Device,
+  DeviceNodeData,
+  DeviceType,
+  Endpoint,
+  EngineeringSettings,
+  GraphicURouteNodeData,
+  Port,
+  ProjectData,
+  Signal,
+} from './types'
+
+type AppNode = DeviceNode | GraphicURouteNode
+type ToolMode = 'select' | 'place-graphic-route'
+
+type MainView =
+  | 'canvas'
+  | 'device-library'
+  | 'project'
+  | 'reports'
+  | 'settings'
+
+type SavedDeviceNode = {
+  id: string
+  position: { x: number; y: number }
 }
 
-type DeviceType = {
-  mfg: string
-  model: string
-  prodtype: string
-  revno: string
-  rack_u: number
-  short_desc: string
-  ports: Port[]
+type SavedGraphicRouteNode = {
+  id: string
+  position: { x: number; y: number }
+  data: {
+    signal: Signal
+    width: number
+    leftHeight: number
+    rightHeight: number
+  }
 }
 
-type Device = {
-  sysname: string
-  type_ref: string
-  rack: string
-  rack_level?: number
+type SavedProjectFile = {
+  format: 'av-engineering-project'
+  formatVersion: 1
+  savedAt: string
+  sourceProject: ProjectData['project']
+  projectDevices: Device[]
+  viewport: Viewport
+  deviceNodes: SavedDeviceNode[]
+  deletedDeviceIds: string[]
+  graphicRoutes: SavedGraphicRouteNode[]
+  edges: CableEdge[]
+}
+
+type RecentProjectRecord = {
+  id: string
+  name: string
   location: string
+  updatedAt: string
+  file: SavedProjectFile
 }
 
-type ProjectData = {
-  project: {
-    name: string
-    facility_id: number
-    created_by: string
-    location: string
-  }
-  types: DeviceType[]
-  devices: Device[]
-}
-
-type DeviceNodeData = {
-  kind: 'device'
-  sysname: string
-  manufacturer: string
-  model: string
-  description: string
+type ProjectEditorValues = {
+  name: string
   location: string
-  rack: string
-  ports: Port[]
+  created_by: string
+  facility_id: number
 }
 
-type FeatherNodeData = {
-  kind: 'feather'
-  featherKind: 'source' | 'destination'
-  cableNumber: string
-  remoteDevice: string
-  remotePort: string
-  signal: Signal
+
+type HistorySnapshot = {
+  nodes: AppNode[]
+  edges: CableEdge[]
 }
 
-type BusNodeData = {
-  kind: 'bus'
-  label: string
-  signal: Signal
-  slots: number
+const HISTORY_LIMIT = 100
+const GLOBAL_LIBRARY_STORAGE_KEY = 'av-engineering-device-library-v1'
+const RECENT_PROJECTS_STORAGE_KEY = 'av-engineering-recent-projects-v1'
+const MAX_RECENT_PROJECTS = 10
+const ENGINEERING_SETTINGS_STORAGE_KEY =
+  'av-engineering-settings-v1'
+
+const DEFAULT_ENGINEERING_SETTINGS: EngineeringSettings = {
+  signalTypes: [
+    {
+      id: 'DGV',
+      label: 'SDI',
+      prefix: 'DV',
+      startNumber: 1,
+      nextNumber: 1,
+    },
+    {
+      id: 'AUD',
+      label: 'AES / Audio',
+      prefix: 'A',
+      startNumber: 1,
+      nextNumber: 1,
+    },
+    {
+      id: 'DAT',
+      label: 'Ethernet',
+      prefix: 'N',
+      startNumber: 1,
+      nextNumber: 1,
+    },
+    {
+      id: 'CTRL',
+      label: 'Control',
+      prefix: 'C',
+      startNumber: 1,
+      nextNumber: 1,
+    },
+    {
+      id: 'PWR',
+      label: 'Power',
+      prefix: 'P',
+      startNumber: 1,
+      nextNumber: 1,
+    },
+  ],
+  connectors: [
+    'BNC',
+    'XLR3',
+    'XLR5',
+    'RJ45',
+    'SFP',
+    'SFP+',
+    'LC',
+    'SC',
+    'HDMI',
+    'DisplayPort',
+    'USB-A',
+    'USB-C',
+    'IEC',
+    'PowerCON',
+  ],
+  defaultCableDisplayMode: 'feather',
 }
 
-type AppNodeData = DeviceNodeData | FeatherNodeData | BusNodeData
-type AppNode = Node<AppNodeData>
-type CableEdgeData = {
-  cableNumber: string
-  signal: Signal
-}
-type CableEdge = Edge<CableEdgeData>
-
-const SIGNAL_OPTIONS: Signal[] = ['DGV', 'DAT', 'AUD', 'CTRL', 'PWR']
-
-function signalColor(signal: Signal) {
-  switch (signal) {
-    case 'DGV':
-      return '#b3ad00'
-    case 'DAT':
-      return '#00a6b2'
-    case 'AUD':
-      return '#c026d3'
-    case 'CTRL':
-      return '#16a34a'
-    case 'PWR':
-      return '#111827'
-    default:
-      return '#64748b'
+function cloneHistorySnapshot(
+  nodes: AppNode[],
+  edges: CableEdge[],
+): HistorySnapshot {
+  /*
+   * structuredClone kan geen callbackfuncties kopiëren. Device- en
+   * U-route-data bevatten callbacks, waardoor de vorige versie hier stopte.
+   * React Flow werkt immutable, dus een gecontroleerde kopie is voldoende.
+   */
+  return {
+    nodes: nodes.map((node) => ({
+      ...node,
+      position: { ...node.position },
+      data: { ...node.data },
+    })) as AppNode[],
+    edges: edges.map((edge) => ({
+      ...edge,
+      data: edge.data ? { ...edge.data } : undefined,
+      style: edge.style ? { ...edge.style } : undefined,
+      labelStyle: edge.labelStyle
+        ? { ...edge.labelStyle }
+        : undefined,
+      labelBgStyle: edge.labelBgStyle
+        ? { ...edge.labelBgStyle }
+        : undefined,
+    })) as CableEdge[],
   }
 }
 
-function signalName(signal: Signal) {
-  switch (signal) {
-    case 'DGV':
-      return 'DGV (SDI)'
-    case 'DAT':
-      return 'DAT (Network)'
-    case 'AUD':
-      return 'AUD (Audio)'
-    case 'CTRL':
-      return 'CTRL (Control)'
-    case 'PWR':
-      return '230VAC'
-    default:
-      return signal
-  }
-}
-
-function createPortHandleId(side: 'left' | 'right', portLabel: string) {
-  return `port:${side}:${portLabel}`
-}
-
-function readPortLabel(handleId: string | null | undefined) {
-  if (!handleId?.startsWith('port:')) return null
-  return handleId.split(':').slice(2).join(':')
-}
-
-function PortRow({ port, side }: { port: Port; side: 'left' | 'right' }) {
-  const isLeft = side === 'left'
-
-  return (
-    <div
-      title={`${port.signal} · ${port.connector}`}
-      style={{
-        position: 'relative',
-        display: 'grid',
-        gridTemplateColumns: isLeft ? '42px 1fr' : '1fr 42px',
-        alignItems: 'center',
-        minHeight: 24,
-        padding: isLeft ? '0 8px 0 12px' : '0 12px 0 8px',
-        borderBottom: '1px solid #dbe4ef',
-        fontSize: 10,
-        lineHeight: 1.1,
-      }}
-    >
-      {isLeft && (
-        <span style={{ color: '#475569', fontSize: 8 }}>{port.connector}</span>
-      )}
-
-      <span
-        style={{
-          fontWeight: 700,
-          textAlign: isLeft ? 'left' : 'right',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {port.label}
-      </span>
-
-      {!isLeft && (
-        <span style={{ color: '#475569', fontSize: 8, textAlign: 'right' }}>
-          {port.connector}
-        </span>
-      )}
-
-      <Handle
-        type={isLeft ? 'target' : 'source'}
-        position={isLeft ? Position.Left : Position.Right}
-        id={createPortHandleId(side, port.label)}
-        style={{
-          width: 9,
-          height: 9,
-          border: '1px solid white',
-          background: signalColor(port.signal),
-        }}
-      />
-    </div>
-  )
-}
-
-function DeviceNodeComponent({ data }: NodeProps<Node<DeviceNodeData>>) {
-  const leftPorts = [...data.ports]
-    .filter((port) => port.direction === 'I' || port.direction === 'L')
-    .sort((a, b) => a.pos - b.pos)
-
-  const rightPorts = [...data.ports]
-    .filter((port) => port.direction === 'O' || port.direction === 'L')
-    .sort((a, b) => a.pos - b.pos)
-
-  const rowCount = Math.max(leftPorts.length, rightPorts.length)
-
-  return (
-    <div
-      style={{
-        width: 360,
-        background: '#fff',
-        border: '3px solid #1428d4',
-        color: '#111827',
-      }}
-    >
-      <div
-        className="drag-handle"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr auto',
-          gap: 12,
-          padding: '8px 10px',
-          borderBottom: '2px solid #1428d4',
-          cursor: 'grab',
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 800 }}>{data.sysname}</div>
-          <div style={{ marginTop: 2, fontSize: 8, color: '#475569' }}>
-            {data.location}
-          </div>
-        </div>
-
-        <div style={{ textAlign: 'right', fontSize: 9, fontWeight: 800 }}>
-          <div>{data.manufacturer}</div>
-          <div>{data.model}</div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          padding: '5px 10px',
-          borderBottom: '1px solid #94a3b8',
-          color: '#334155',
-          fontSize: 8,
-          textAlign: 'center',
-        }}
-      >
-        {data.description}
-      </div>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          minHeight: Math.max(96, rowCount * 24),
-        }}
-      >
-        <div style={{ borderRight: '1px solid #94a3b8' }}>
-          <div
-            style={{
-              padding: '4px 8px',
-              borderBottom: '1px solid #94a3b8',
-              background: '#f8fafc',
-              fontSize: 8,
-              fontWeight: 800,
-            }}
-          >
-            INPUTS
-          </div>
-          {leftPorts.map((port) => (
-            <PortRow key={`${port.label}-left`} port={port} side="left" />
-          ))}
-        </div>
-
-        <div>
-          <div
-            style={{
-              padding: '4px 8px',
-              borderBottom: '1px solid #94a3b8',
-              background: '#f8fafc',
-              fontSize: 8,
-              fontWeight: 800,
-              textAlign: 'right',
-            }}
-          >
-            OUTPUTS
-          </div>
-          {rightPorts.map((port) => (
-            <PortRow key={`${port.label}-right`} port={port} side="right" />
-          ))}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          padding: '5px 10px',
-          borderTop: '2px solid #1428d4',
-          fontSize: 8,
-          color: '#334155',
-        }}
-      >
-        <span>{data.rack}</span>
-        <span>{data.sysname}</span>
-      </div>
-    </div>
-  )
-}
-
-function FeatherNodeComponent({ data, selected }: NodeProps<Node<FeatherNodeData>>) {
-  const isSource = data.featherKind === 'source'
-  const color = signalColor(data.signal)
-
-  return (
-    <div
-      className="drag-handle"
-      style={{
-        position: 'relative',
-        minWidth: 190,
-        padding: '6px 22px',
-        background: '#fff',
-        border: selected ? `2px solid ${color}` : '1px solid transparent',
-        cursor: 'grab',
-        textAlign: isSource ? 'right' : 'left',
-      }}
-    >
-      <Handle
-        type={isSource ? 'source' : 'target'}
-        position={isSource ? Position.Right : Position.Left}
-        id="feather"
-        style={{
-          width: 10,
-          height: 10,
-          border: '1px solid white',
-          background: color,
-        }}
-      />
-
-      <div style={{ fontSize: 9, fontWeight: 800 }}>
-        {data.remoteDevice || 'REMOTE DEVICE'}
-      </div>
-      <div style={{ fontSize: 8 }}>{data.remotePort || 'REMOTE PORT'}</div>
-
-      <div
-        style={{
-          position: 'absolute',
-          top: '50%',
-          [isSource ? 'right' : 'left']: -18,
-          width: 0,
-          height: 0,
-          transform: 'translateY(-50%)',
-          borderTop: '7px solid transparent',
-          borderBottom: '7px solid transparent',
-          ...(isSource
-            ? { borderLeft: `18px solid ${color}` }
-            : { borderRight: `18px solid ${color}` }),
-        }}
-      />
-
-      <div
-        style={{
-          position: 'absolute',
-          top: -12,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          padding: '1px 5px',
-          background: '#fff',
-          border: `1px solid ${color}`,
-          fontSize: 9,
-          fontWeight: 800,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {data.cableNumber}
-      </div>
-    </div>
-  )
-}
-
-function BusNodeComponent({ data, selected }: NodeProps<Node<BusNodeData>>) {
-  const color = signalColor(data.signal)
-  const slots = Array.from({ length: data.slots }, (_, index) => index)
-
-  return (
-    <div
-      className="drag-handle"
-      style={{
-        position: 'relative',
-        width: 38,
-        minHeight: Math.max(180, data.slots * 34),
-        cursor: 'grab',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: 22,
-          bottom: 0,
-          width: selected ? 4 : 3,
-          transform: 'translateX(-50%)',
-          background: color,
-        }}
-      />
-
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          padding: '3px 7px',
-          background: '#fff',
-          border: `1px solid ${color}`,
-          color: '#111827',
-          fontSize: 9,
-          fontWeight: 800,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {data.label}
-      </div>
-
-      {slots.map((slot) => {
-        const top = 44 + slot * 34
-        return (
-          <div key={slot}>
-            <div
-              style={{
-                position: 'absolute',
-                top,
-                left: '50%',
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                transform: 'translate(-50%, -50%)',
-                background: color,
-              }}
-            />
-            <Handle
-              type="target"
-              position={Position.Left}
-              id={`bus-left-${slot}`}
-              style={{
-                top,
-                width: 10,
-                height: 10,
-                background: color,
-                border: '1px solid white',
-              }}
-            />
-            <Handle
-              type="source"
-              position={Position.Right}
-              id={`bus-right-${slot}`}
-              style={{
-                top,
-                width: 10,
-                height: 10,
-                background: color,
-                border: '1px solid white',
-              }}
-            />
-          </div>
-        )
-      })}
-    </div>
-  )
+function historySignature(
+  nodes: AppNode[],
+  edges: CableEdge[],
+): string {
+  return JSON.stringify({
+    nodes: nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      position: node.position,
+      selected: node.selected,
+      data:
+        node.type === 'graphic-u-route'
+          ? {
+              signal: node.data.signal,
+              width: node.data.width,
+              leftHeight: node.data.leftHeight,
+              rightHeight: node.data.rightHeight,
+            }
+          : {
+              sysname: node.data.sysname,
+            },
+    })),
+    edges: edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      sourceHandle: edge.sourceHandle,
+      target: edge.target,
+      targetHandle: edge.targetHandle,
+      selected: edge.selected,
+      data: edge.data,
+    })),
+  })
 }
 
 const nodeTypes = {
   device: DeviceNodeComponent,
-  feather: FeatherNodeComponent,
-  bus: BusNodeComponent,
+  'graphic-u-route': GraphicURouteNodeComponent,
 }
 
-function getNodeSignal(node: AppNode | undefined, handleId: string | null | undefined) {
-  if (!node) return undefined
-
-  if (node.data.kind === 'device') {
-    const label = readPortLabel(handleId)
-    return node.data.ports.find((port) => port.label === label)?.signal
-  }
-
-  return node.data.signal
+const edgeTypes = {
+  cable: CableEdgeComponent,
 }
 
-function signalPrefix(signal: Signal) {
+function signalName(signal: Signal) {
   switch (signal) {
-    case 'DGV':
-      return 'DV'
-    case 'DAT':
-      return 'N'
-    case 'AUD':
-      return 'A'
-    case 'CTRL':
-      return 'C'
-    case 'PWR':
-      return 'P'
-    default:
-      return 'X'
+    case 'DGV': return 'DGV / SDI'
+    case 'DAT': return 'DAT / Network'
+    case 'AUD': return 'AUD / Audio'
+    case 'CTRL': return 'CTRL / Control'
+    case 'PWR': return '230VAC'
+    default: return signal
+  }
+}
+
+function generateCableNumber(
+  context: CableNumberContext,
+  settings: EngineeringSettings,
+): {
+  cableNumber: string
+  signalId: string
+  nextNumber: number
+} {
+  const signalDefinition = settings.signalTypes.find(
+    (signal) => signal.id === context.sourcePort.signal,
+  )
+
+  const prefix = signalDefinition?.prefix || 'X'
+  const configuredNext = signalDefinition?.nextNumber ?? 1
+
+  const usedSequenceNumbers = context.existingNumbers
+    .filter((number) => number.startsWith(prefix))
+    .map((number) => Number(number.slice(prefix.length)))
+    .filter(Number.isFinite)
+
+  const nextSequence =
+    usedSequenceNumbers.length === 0
+      ? configuredNext
+      : Math.max(
+          configuredNext,
+          Math.max(...usedSequenceNumbers) + 1,
+        )
+
+  return {
+    cableNumber:
+      `${prefix}${String(nextSequence).padStart(4, '0')}`,
+    signalId: context.sourcePort.signal,
+    nextNumber: nextSequence + 1,
+  }
+}
+
+function portCanBeSource(port: Port) {
+  return port.direction === 'O' || port.direction === 'L'
+}
+
+function portCanBeTarget(port: Port) {
+  return port.direction === 'I' || port.direction === 'L'
+}
+
+function nextDisplayMode(mode: CableDisplayMode): CableDisplayMode {
+  return mode === 'full' ? 'feather' : 'full'
+}
+
+function deviceTypeReference(deviceType: DeviceType) {
+  return `${deviceType.mfg}/${deviceType.model}`
+}
+
+function mergeDeviceTypes(
+  currentTypes: DeviceType[],
+  incomingTypes: DeviceType[],
+) {
+  const map = new Map(
+    currentTypes.map((deviceType) => [
+      deviceTypeReference(deviceType),
+      deviceType,
+    ]),
+  )
+
+  incomingTypes.forEach((deviceType) => {
+    map.set(deviceTypeReference(deviceType), deviceType)
+  })
+
+  return [...map.values()]
+}
+
+function loadGlobalDeviceLibrary(): DeviceType[] {
+  try {
+    const raw = window.localStorage.getItem(
+      GLOBAL_LIBRARY_STORAGE_KEY,
+    )
+
+    if (!raw) return []
+
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? (parsed as DeviceType[])
+      : []
+  } catch {
+    return []
+  }
+}
+
+function loadRecentProjects(): RecentProjectRecord[] {
+  try {
+    const raw = window.localStorage.getItem(
+      RECENT_PROJECTS_STORAGE_KEY,
+    )
+
+    if (!raw) return []
+
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? (parsed as RecentProjectRecord[])
+      : []
+  } catch {
+    return []
+  }
+}
+
+function createEmptyProjectData(
+  values: ProjectEditorValues,
+): ProjectData {
+  return {
+    project: {
+      name: values.name,
+      location: values.location,
+      created_by: values.created_by,
+      facility_id: values.facility_id,
+    },
+    types: [],
+    devices: [],
+  }
+}
+
+function loadEngineeringSettings(): EngineeringSettings {
+  try {
+    const raw = window.localStorage.getItem(
+      ENGINEERING_SETTINGS_STORAGE_KEY,
+    )
+
+    if (!raw) return DEFAULT_ENGINEERING_SETTINGS
+
+    const parsed = JSON.parse(raw) as Partial<EngineeringSettings>
+
+    return {
+      signalTypes:
+        Array.isArray(parsed.signalTypes) &&
+        parsed.signalTypes.length > 0
+          ? parsed.signalTypes
+          : DEFAULT_ENGINEERING_SETTINGS.signalTypes,
+      connectors:
+        Array.isArray(parsed.connectors) &&
+        parsed.connectors.length > 0
+          ? parsed.connectors
+          : DEFAULT_ENGINEERING_SETTINGS.connectors,
+      defaultCableDisplayMode:
+        parsed.defaultCableDisplayMode === 'full'
+          ? 'full'
+          : 'feather',
+    }
+  } catch {
+    return DEFAULT_ENGINEERING_SETTINGS
   }
 }
 
 function App() {
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
+  const [recentProjects, setRecentProjects] = useState<RecentProjectRecord[]>(
+    () => loadRecentProjects(),
+  )
+  const [showProjectEditor, setShowProjectEditor] = useState(false)
+  const [projectEditorMode, setProjectEditorMode] =
+    useState<'new' | 'edit'>('edit')
+  const [projectEditorValues, setProjectEditorValues] =
+    useState<ProjectEditorValues>({
+      name: '',
+      location: '',
+      created_by: '',
+      facility_id: 0,
+    })
+  const [showRecentProjects, setShowRecentProjects] = useState(false)
+  const [showReports, setShowReports] = useState(false)
+  const [showPdfExport, setShowPdfExport] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showCableEditor, setShowCableEditor] = useState(false)
+  const [engineeringSettings, setEngineeringSettings] =
+    useState<EngineeringSettings>(() => loadEngineeringSettings())
+
+  const [mainView, setMainView] = useState<MainView>('canvas')
+
+
+
+
+  const [libraryTypes, setLibraryTypes] = useState<DeviceType[]>(
+    () => loadGlobalDeviceLibrary(),
+  )
+  const [projectDevices, setProjectDevices] = useState<Device[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [selectedSource, setSelectedSource] = useState<Endpoint | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null)
+  const [deletedDeviceIds, setDeletedDeviceIds] = useState<string[]>([])
   const [toolMode, setToolMode] = useState<ToolMode>('select')
-  const [selectedSignal, setSelectedSignal] = useState<Signal>('DGV')
-  const [status, setStatus] = useState('Selecteer een gereedschap.')
+  const [routeSignal, setRouteSignal] = useState<Signal>('DGV')
   const [flowInstance, setFlowInstance] =
     useState<ReactFlowInstance<AppNode, CableEdge> | null>(null)
+  const openProjectInputRef = useRef<HTMLInputElement | null>(null)
 
-  const counters = useRef<Record<string, number>>({
-    DGV: 4100,
-    DAT: 100,
-    AUD: 100,
-    CTRL: 100,
-    PWR: 100,
-  })
+  const undoStackRef = useRef<HistorySnapshot[]>([])
+  const redoStackRef = useRef<HistorySnapshot[]>([])
+  const lastStableSnapshotRef = useRef<HistorySnapshot | null>(null)
+  const lastSignatureRef = useRef<string>('')
+  const historyTimerRef = useRef<number | null>(null)
+  const applyingHistoryRef = useRef(false)
+
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
+
+  const [status, setStatus] = useState(
+    'Klik eerst op een uitgang en daarna op een ingang.',
+  )
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      GLOBAL_LIBRARY_STORAGE_KEY,
+      JSON.stringify(libraryTypes),
+    )
+  }, [libraryTypes])
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      RECENT_PROJECTS_STORAGE_KEY,
+      JSON.stringify(recentProjects),
+    )
+  }, [recentProjects])
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      ENGINEERING_SETTINGS_STORAGE_KEY,
+      JSON.stringify(engineeringSettings),
+    )
+  }, [engineeringSettings])
 
   useEffect(() => {
     fetch('/data/project.json')
@@ -530,9 +491,16 @@ function App() {
         if (!response.ok) {
           throw new Error(`JSON kon niet worden geladen: ${response.status}`)
         }
+
         return response.json()
       })
-      .then((data: ProjectData) => setProjectData(data))
+      .then((data: ProjectData) => {
+        setProjectData(data)
+        setLibraryTypes((current) =>
+          mergeDeviceTypes(current, data.types),
+        )
+        setProjectDevices(data.devices)
+      })
       .catch((loadError: unknown) => {
         setError(
           loadError instanceof Error
@@ -542,314 +510,2248 @@ function App() {
       })
   }, [])
 
-  const initialNodes = useMemo<AppNode[]>(() => {
+  const baseNodes = useMemo<DeviceNode[]>(() => {
     if (!projectData) return []
 
     const typeMap = new Map(
-      projectData.types.map((deviceType) => [
+      libraryTypes.map((deviceType) => [
         `${deviceType.mfg}/${deviceType.model}`,
         deviceType,
       ]),
     )
 
-    return projectData.devices.flatMap((device, index) => {
+    return projectDevices.flatMap((device, index) => {
       const deviceType = typeMap.get(device.type_ref)
       if (!deviceType) return []
 
-      const node: AppNode = {
+      const data: DeviceNodeData = {
+        sysname: device.sysname,
+        manufacturer: deviceType.mfg,
+        model: deviceType.model,
+        description: deviceType.short_desc,
+        location: device.location,
+        rack: device.rack,
+        ports: deviceType.ports,
+        selectedSource: null,
+        onPortClick: () => undefined,
+      }
+
+      return [{
         id: device.sysname,
         type: 'device',
         dragHandle: '.drag-handle',
         position: {
-          x: (index % 2) * 560,
-          y: Math.floor(index / 2) * 460,
+          x: (index % 2) * 620,
+          y: Math.floor(index / 2) * 480,
         },
-        data: {
-          kind: 'device',
-          sysname: device.sysname,
-          manufacturer: deviceType.mfg,
-          model: deviceType.model,
-          description: deviceType.short_desc,
-          location: device.location,
-          rack: device.rack,
-          ports: deviceType.ports,
-        },
-      }
-
-      return [node]
+        data,
+      }]
     })
-  }, [projectData])
+  }, [libraryTypes, projectData, projectDevices])
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initialNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState<CableEdge>([])
+  const [nodes, setNodes, onNodesChange] =
+    useNodesState<AppNode>([])
+  const [edges, setEdges, onEdgesChange] =
+    useEdgesState<CableEdge>([])
 
-  useEffect(() => {
-    setNodes(initialNodes)
-  }, [initialNodes, setNodes])
 
-  const isValidConnection: IsValidConnection<CableEdge> = useCallback(
-    (connection) => {
-      if (
-        !connection.source ||
-        !connection.target ||
-        connection.source === connection.target
-      ) {
-        return false
-      }
+  const updateHistoryButtons = useCallback(() => {
+    setCanUndo(undoStackRef.current.length > 0)
+    setCanRedo(redoStackRef.current.length > 0)
+  }, [])
 
-      const sourceNode = nodes.find((node) => node.id === connection.source)
-      const targetNode = nodes.find((node) => node.id === connection.target)
-      const sourceSignal = getNodeSignal(sourceNode, connection.sourceHandle)
-      const targetSignal = getNodeSignal(targetNode, connection.targetHandle)
-
-      if (!sourceSignal || !targetSignal || sourceSignal !== targetSignal) {
-        return false
-      }
-
-      return !edges.some(
-        (edge) =>
-          edge.target === connection.target &&
-          edge.targetHandle === connection.targetHandle &&
-          targetNode?.data.kind !== 'bus',
-      )
+  const resetHistory = useCallback(
+    (currentNodes: AppNode[], currentEdges: CableEdge[]) => {
+      undoStackRef.current = []
+      redoStackRef.current = []
+      lastStableSnapshotRef.current =
+        cloneHistorySnapshot(currentNodes, currentEdges)
+      lastSignatureRef.current =
+        historySignature(currentNodes, currentEdges)
+      updateHistoryButtons()
     },
-    [edges, nodes],
+    [updateHistoryButtons],
   )
 
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      const sourceNode = nodes.find((node) => node.id === connection.source)
-      const targetNode = nodes.find((node) => node.id === connection.target)
-      const signal = getNodeSignal(sourceNode, connection.sourceHandle)
+  /*
+   * Wijzigingen worden pas na een korte rustige periode als één handeling
+   * opgeslagen. Daardoor telt een complete sleepbeweging of het verstellen
+   * van een U-lijn als één Undo-stap, niet als tientallen muisbewegingen.
+   */
+  useEffect(() => {
+    if (applyingHistoryRef.current) return
 
-      if (!signal || signal !== getNodeSignal(targetNode, connection.targetHandle)) {
-        setStatus('Verbinding geweigerd: signalen zijn niet gelijk.')
+    const signature = historySignature(nodes, edges)
+
+    if (!lastStableSnapshotRef.current) {
+      lastStableSnapshotRef.current =
+        cloneHistorySnapshot(nodes, edges)
+      lastSignatureRef.current = signature
+      return
+    }
+
+    if (signature === lastSignatureRef.current) return
+
+    if (historyTimerRef.current !== null) {
+      window.clearTimeout(historyTimerRef.current)
+    }
+
+    historyTimerRef.current = window.setTimeout(() => {
+      const previous = lastStableSnapshotRef.current
+
+      if (previous) {
+        undoStackRef.current = [
+          ...undoStackRef.current,
+          previous,
+        ].slice(-HISTORY_LIMIT)
+      }
+
+      redoStackRef.current = []
+      lastStableSnapshotRef.current =
+        cloneHistorySnapshot(nodes, edges)
+      lastSignatureRef.current =
+        historySignature(nodes, edges)
+      updateHistoryButtons()
+      historyTimerRef.current = null
+    }, 350)
+
+    return () => {
+      if (historyTimerRef.current !== null) {
+        window.clearTimeout(historyTimerRef.current)
+        historyTimerRef.current = null
+      }
+    }
+  }, [edges, nodes, updateHistoryButtons])
+
+  const applyHistorySnapshot = useCallback(
+    (snapshot: HistorySnapshot) => {
+      applyingHistoryRef.current = true
+
+      setNodes(snapshot.nodes)
+      setEdges(snapshot.edges)
+      setDeletedDeviceIds(
+        baseNodes
+          .filter(
+            (baseNode) =>
+              !snapshot.nodes.some((node) => node.id === baseNode.id),
+          )
+          .map((node) => node.id),
+      )
+      setSelectedSource(null)
+      setSelectedEdgeId(null)
+      setSelectedNodeId(null)
+      setToolMode('select')
+
+      lastStableSnapshotRef.current =
+        cloneHistorySnapshot(snapshot.nodes, snapshot.edges)
+      lastSignatureRef.current =
+        historySignature(snapshot.nodes, snapshot.edges)
+
+      window.requestAnimationFrame(() => {
+        applyingHistoryRef.current = false
+      })
+    },
+    [baseNodes, setEdges, setNodes],
+  )
+
+  const undo = useCallback(() => {
+    const previous = undoStackRef.current.at(-1)
+    if (!previous) return
+
+    const current =
+      lastStableSnapshotRef.current ??
+      cloneHistorySnapshot(nodes, edges)
+
+    undoStackRef.current = undoStackRef.current.slice(0, -1)
+    redoStackRef.current = [
+      ...redoStackRef.current,
+      current,
+    ].slice(-HISTORY_LIMIT)
+
+    applyHistorySnapshot(previous)
+    updateHistoryButtons()
+    setStatus('Laatste wijziging ongedaan gemaakt.')
+  }, [
+    applyHistorySnapshot,
+    edges,
+    nodes,
+    updateHistoryButtons,
+  ])
+
+  const redo = useCallback(() => {
+    const next = redoStackRef.current.at(-1)
+    if (!next) return
+
+    const current =
+      lastStableSnapshotRef.current ??
+      cloneHistorySnapshot(nodes, edges)
+
+    redoStackRef.current = redoStackRef.current.slice(0, -1)
+    undoStackRef.current = [
+      ...undoStackRef.current,
+      current,
+    ].slice(-HISTORY_LIMIT)
+
+    applyHistorySnapshot(next)
+    updateHistoryButtons()
+    setStatus('Wijziging opnieuw uitgevoerd.')
+  }, [
+    applyHistorySnapshot,
+    edges,
+    nodes,
+    updateHistoryButtons,
+  ])
+
+  const createCable = useCallback(
+    (source: Endpoint, target: Endpoint) => {
+      if (!portCanBeSource(source.port)) {
+        setStatus(`${source.deviceId}/${source.port.label} is geen uitgang.`)
         return
       }
 
-      counters.current[signal] = (counters.current[signal] ?? 0) + 1
-      const cableNumber = `${signalPrefix(signal)}${String(
-        counters.current[signal],
-      ).padStart(4, '0')}`
+      if (!portCanBeTarget(target.port)) {
+        setStatus(`${target.deviceId}/${target.port.label} is geen ingang.`)
+        return
+      }
 
-      const newEdge: CableEdge = {
-        ...connection,
-        id: `edge-${crypto.randomUUID()}`,
-        type: 'smoothstep',
-        label: cableNumber,
-        data: { cableNumber, signal },
-        style: {
-          stroke: signalColor(signal),
-          strokeWidth: 1.8,
+      if (source.deviceId === target.deviceId) {
+        setStatus('Bron en bestemming mogen niet hetzelfde apparaat zijn.')
+        return
+      }
+
+      if (source.port.signal !== target.port.signal) {
+        setStatus(
+          `Verbinding geweigerd: ${source.port.signal} past niet op ${target.port.signal}.`,
+        )
+        return
+      }
+
+      const inputOccupied = edges.some(
+        (edge) =>
+          edge.target === target.deviceId &&
+          edge.targetHandle === `port:${target.port.label}`,
+      )
+
+      if (inputOccupied) {
+        setStatus(`${target.deviceId}/${target.port.label} is al aangesloten.`)
+        return
+      }
+
+      const generatedCableNumber = generateCableNumber(
+        {
+          sourceDevice: source.deviceId,
+          sourcePort: source.port,
+          targetDevice: target.deviceId,
+          targetPort: target.port,
+          existingNumbers: edges.flatMap((edge) =>
+            edge.data?.cableNumber ? [edge.data.cableNumber] : [],
+          ),
         },
-        labelStyle: {
-          fill: '#111827',
-          fontSize: 9,
-          fontWeight: 800,
-        },
-        labelShowBg: true,
-        labelBgPadding: [5, 3],
-        labelBgBorderRadius: 1,
-        labelBgStyle: {
-          fill: '#fff',
-          stroke: signalColor(signal),
+        engineeringSettings,
+      )
+
+      const cableNumber = generatedCableNumber.cableNumber
+
+      setEngineeringSettings((current) => ({
+        ...current,
+        signalTypes: current.signalTypes.map((signal) =>
+          signal.id === generatedCableNumber.signalId
+            ? {
+                ...signal,
+                nextNumber: generatedCableNumber.nextNumber,
+              }
+            : signal,
+        ),
+      }))
+
+      const edge: CableEdge = {
+        id: `cable-${crypto.randomUUID()}`,
+        type: 'cable',
+        source: source.deviceId,
+        sourceHandle: `port:${source.port.label}`,
+        target: target.deviceId,
+        targetHandle: `port:${target.port.label}`,
+        data: {
+          cableNumber,
+          signal: source.port.signal,
+          displayMode: engineeringSettings.defaultCableDisplayMode,
+          sourceDevice: source.deviceId,
+          sourcePort: source.port.label,
+          sourceConnector: source.port.connector,
+          targetDevice: target.deviceId,
+          targetPort: target.port.label,
+          targetConnector: target.port.connector,
+          featherLane: 0,
         },
       }
 
-      setEdges((currentEdges) => addEdge(newEdge, currentEdges))
-      setStatus(`${cableNumber} aangemaakt.`)
+      setEdges((current) => [...current, edge])
+      setSelectedSource(null)
+      setSelectedEdgeId(edge.id)
+      setStatus(
+        `${cableNumber}: ${source.deviceId}/${source.port.label} → ` +
+          `${target.deviceId}/${target.port.label}`,
+      )
     },
-    [nodes, setEdges],
+    [edges, engineeringSettings, setEdges],
   )
 
-  const placeNode = useCallback(
+  const onPortClick = useCallback(
+    (endpoint: Endpoint) => {
+      if (toolMode !== 'select') {
+        setStatus('Kies eerst Select om een kabel te maken.')
+        return
+      }
+
+      if (!selectedSource) {
+        if (!portCanBeSource(endpoint.port)) {
+          setStatus('Klik eerst op een uitgang.')
+          return
+        }
+
+        setSelectedSource(endpoint)
+        setStatus(
+          `Bron gekozen: ${endpoint.deviceId}/${endpoint.port.label}. ` +
+            'Klik nu op een ingang.',
+        )
+        return
+      }
+
+      if (
+        selectedSource.deviceId === endpoint.deviceId &&
+        selectedSource.port.label === endpoint.port.label
+      ) {
+        setSelectedSource(null)
+        setStatus('Bronselectie geannuleerd.')
+        return
+      }
+
+      if (portCanBeSource(endpoint.port) && !portCanBeTarget(endpoint.port)) {
+        setSelectedSource(endpoint)
+        setStatus(
+          `Nieuwe bron gekozen: ${endpoint.deviceId}/${endpoint.port.label}.`,
+        )
+        return
+      }
+
+      createCable(selectedSource, endpoint)
+    },
+    [createCable, selectedSource, toolMode],
+  )
+
+  const changeRouteGeometry = useCallback(
+    (
+      nodeId: string,
+      geometry: {
+        width?: number
+        leftHeight?: number
+        rightHeight?: number
+      },
+    ) => {
+      setNodes((current) =>
+        current.map((node) => {
+          if (node.id !== nodeId || node.type !== 'graphic-u-route') {
+            return node
+          }
+
+          const data = node.data as GraphicURouteNodeData
+
+          return {
+            ...node,
+            data: {
+              ...data,
+              width: geometry.width ?? data.width,
+              leftHeight: geometry.leftHeight ?? data.leftHeight,
+              rightHeight: geometry.rightHeight ?? data.rightHeight,
+            },
+          }
+        }),
+      )
+    },
+    [setNodes],
+  )
+
+  useEffect(() => {
+    setNodes((currentNodes) => {
+      const routeNodes = currentNodes
+        .filter((node) => node.type === 'graphic-u-route')
+        .map((node) => ({
+          ...node,
+          data: {
+            ...(node.data as GraphicURouteNodeData),
+            onChangeGeometry: changeRouteGeometry,
+          },
+        }))
+
+      const mergedDeviceNodes = baseNodes
+        .filter((baseNode) => !deletedDeviceIds.includes(baseNode.id))
+        .map((baseNode) => {
+        const existingNode = currentNodes.find(
+          (node) => node.id === baseNode.id,
+        )
+
+        if (!existingNode) {
+          return {
+            ...baseNode,
+            data: {
+              ...baseNode.data,
+              selectedSource,
+              onPortClick,
+            },
+          }
+        }
+
+        return {
+          ...existingNode,
+          type: baseNode.type,
+          dragHandle: baseNode.dragHandle,
+          data: {
+            ...baseNode.data,
+            selectedSource,
+            onPortClick,
+          },
+        }
+      })
+
+      return [...mergedDeviceNodes, ...routeNodes]
+    })
+  }, [
+    baseNodes,
+    changeRouteGeometry,
+    deletedDeviceIds,
+    onPortClick,
+    selectedSource,
+    setNodes,
+  ])
+
+  const setSelectedCableMode = useCallback(
+    (displayMode: CableDisplayMode) => {
+      if (!selectedEdgeId) {
+        setStatus('Selecteer eerst een kabel.')
+        return
+      }
+
+      setEdges((current) =>
+        current.map((edge) =>
+          edge.id === selectedEdgeId && edge.data
+            ? {
+                ...edge,
+                data: {
+                  ...edge.data,
+                  displayMode,
+                },
+              }
+            : edge,
+        ),
+      )
+    },
+    [selectedEdgeId, setEdges],
+  )
+
+  const placeGraphicRoute = useCallback(
     (event: React.MouseEvent) => {
-      if (!flowInstance || toolMode === 'select') return
+      if (toolMode !== 'place-graphic-route' || !flowInstance) return
 
       const position = flowInstance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       })
 
-      if (toolMode === 'bus') {
-        const label = window.prompt('Naam van de bus:', `${signalName(selectedSignal)} BUS`)
-        if (!label) return
+      const routeNode: GraphicURouteNode = {
+        id: `graphic-route-${crypto.randomUUID()}`,
+        type: 'graphic-u-route',
+        dragHandle: '.drag-handle',
+        position,
+        data: {
+          signal: routeSignal,
+          width: 420,
+          leftHeight: 240,
+          rightHeight: 170,
+          onChangeGeometry: changeRouteGeometry,
+        },
+      }
 
-        setNodes((current) => [
-          ...current,
-          {
-            id: `bus-${crypto.randomUUID()}`,
-            type: 'bus',
-            dragHandle: '.drag-handle',
-            position,
-            data: {
-              kind: 'bus',
-              label,
-              signal: selectedSignal,
-              slots: 12,
-            },
-          },
-        ])
-        setStatus(`${label} geplaatst. Verbind kabels met de buspunten.`)
-      } else {
-        const featherKind =
-          toolMode === 'source-feather' ? 'source' : 'destination'
-        const defaultNumber = `${signalPrefix(selectedSignal)}????`
-        const cableNumber =
-          window.prompt('Kabelnummer:', defaultNumber) || defaultNumber
-        const remoteDevice =
-          window.prompt('Apparaat aan de andere zijde:', 'REMOTE') || 'REMOTE'
-        const remotePort =
-          window.prompt('Poort aan de andere zijde:', 'PORT') || 'PORT'
+      setNodes((current) => [...current, routeNode])
+      setToolMode('select')
+      setStatus(
+        'Grafische U-route geplaatst. Selecteer hem om de vier punten te zien.',
+      )
+    },
+    [
+      changeRouteGeometry,
+      flowInstance,
+      routeSignal,
+      setNodes,
+      toolMode,
+    ],
+  )
 
-        setNodes((current) => [
-          ...current,
-          {
-            id: `feather-${crypto.randomUUID()}`,
-            type: 'feather',
-            dragHandle: '.drag-handle',
-            position,
-            data: {
-              kind: 'feather',
-              featherKind,
-              cableNumber,
-              remoteDevice,
-              remotePort,
-              signal: selectedSignal,
-            },
-          },
-        ])
-        setStatus(
-          `${featherKind === 'source' ? 'Bron' : 'Doel'}-feather geplaatst.`,
+  const updateDeviceInstance = useCallback(
+    (
+      originalSysname: string,
+      updatedDevice: Device,
+    ) => {
+      const originalNode = nodes.find(
+        (node) => node.id === originalSysname,
+      )
+
+      setProjectDevices((current) =>
+        current.map((device) =>
+          device.sysname === originalSysname
+            ? updatedDevice
+            : device,
+        ),
+      )
+
+      setDeletedDeviceIds((current) =>
+        current.filter(
+          (id) =>
+            id !== originalSysname &&
+            id !== updatedDevice.sysname,
+        ),
+      )
+
+      setEdges((current) =>
+        current.map((edge) => {
+          const sourceChanged = edge.source === originalSysname
+          const targetChanged = edge.target === originalSysname
+
+          if (!sourceChanged && !targetChanged) return edge
+
+          return {
+            ...edge,
+            source: sourceChanged
+              ? updatedDevice.sysname
+              : edge.source,
+            target: targetChanged
+              ? updatedDevice.sysname
+              : edge.target,
+            data: edge.data
+              ? {
+                  ...edge.data,
+                  sourceDevice: sourceChanged
+                    ? updatedDevice.sysname
+                    : edge.data.sourceDevice,
+                  targetDevice: targetChanged
+                    ? updatedDevice.sysname
+                    : edge.data.targetDevice,
+                }
+              : edge.data,
+          }
+        }),
+      )
+
+      if (originalSysname !== updatedDevice.sysname) {
+        setNodes((current) =>
+          current.map((node) =>
+            node.id === originalSysname
+              ? {
+                  ...node,
+                  id: updatedDevice.sysname,
+                  position:
+                    originalNode?.position ?? node.position,
+                }
+              : node,
+          ),
         )
       }
 
-      setToolMode('select')
+      setSelectedNodeId(updatedDevice.sysname)
+      setEditingDeviceId(null)
+      setStatus(
+        `Apparaat ${updatedDevice.sysname} bijgewerkt.`,
+      )
     },
-    [flowInstance, selectedSignal, setNodes, toolMode],
+    [nodes, setEdges, setNodes],
+  )
+
+  const createDeviceType = useCallback(
+    (deviceType: DeviceType) => {
+      setLibraryTypes((current) => [...current, deviceType])
+      setStatus(
+        `Apparaattype ${deviceType.mfg}/${deviceType.model} aangemaakt.`,
+      )
+    },
+    [],
+  )
+
+  const updateDeviceType = useCallback(
+    (
+      originalTypeRef: string,
+      updatedType: DeviceType,
+    ) => {
+      const updatedReference =
+        `${updatedType.mfg}/${updatedType.model}`
+
+      setLibraryTypes((current) =>
+        current.map((deviceType) =>
+          `${deviceType.mfg}/${deviceType.model}` === originalTypeRef
+            ? updatedType
+            : deviceType,
+        ),
+      )
+
+      if (updatedReference !== originalTypeRef) {
+        setProjectDevices((current) =>
+          current.map((device) =>
+            device.type_ref === originalTypeRef
+              ? {
+                  ...device,
+                  type_ref: updatedReference,
+                }
+              : device,
+          ),
+        )
+      }
+
+      setStatus(`Apparaattype ${updatedReference} bijgewerkt.`)
+    },
+    [],
+  )
+
+  const importLibraryJson = useCallback(
+    (
+      importedTypes: DeviceType[],
+      importedDevices: Device[],
+    ) => {
+      setLibraryTypes((current) => {
+        const map = new Map(
+          current.map((deviceType) => [
+            `${deviceType.mfg}/${deviceType.model}`,
+            deviceType,
+          ]),
+        )
+
+        importedTypes.forEach((deviceType) => {
+          map.set(
+            `${deviceType.mfg}/${deviceType.model}`,
+            deviceType,
+          )
+        })
+
+        return [...map.values()]
+      })
+
+      setProjectDevices((current) => {
+        const map = new Map(
+          current.map((device) => [device.sysname, device]),
+        )
+
+        importedDevices.forEach((device) => {
+          map.set(device.sysname, device)
+        })
+
+        return [...map.values()]
+      })
+
+      setDeletedDeviceIds((current) =>
+        current.filter(
+          (deletedId) =>
+            !importedDevices.some(
+              (device) => device.sysname === deletedId,
+            ),
+        ),
+      )
+
+      setStatus(
+        `${importedTypes.length} type(s) en ` +
+          `${importedDevices.length} device(s) geïmporteerd.`,
+      )
+    },
+    [],
+  )
+
+  const deleteDeviceType = useCallback(
+    (reference: string) => {
+      const inUse = projectDevices.some(
+        (device) => device.type_ref === reference,
+      )
+
+      if (inUse) {
+        setStatus(
+          `Type ${reference} kan niet worden verwijderd: het wordt gebruikt.`,
+        )
+        return
+      }
+
+      setLibraryTypes((current) =>
+        current.filter(
+          (deviceType) =>
+            `${deviceType.mfg}/${deviceType.model}` !== reference,
+        ),
+      )
+      setStatus(`Apparaattype ${reference} verwijderd.`)
+    },
+    [projectDevices],
+  )
+
+  const placeLibraryDevice = useCallback(
+    (device: Device) => {
+      if (!flowInstance) {
+        setStatus('Het canvas is nog niet gereed.')
+        return
+      }
+
+      const position = flowInstance.screenToFlowPosition({
+        x: window.innerWidth * 0.62,
+        y: window.innerHeight * 0.5,
+      })
+
+      setProjectDevices((current) => [...current, device])
+      setDeletedDeviceIds((current) =>
+        current.filter((id) => id !== device.sysname),
+      )
+
+      // De baseNodes-effect maakt het device aan; daarna corrigeren we de
+      // positie naar het midden van het zichtbare canvas.
+      window.setTimeout(() => {
+        setNodes((current) =>
+          current.map((node) =>
+            node.id === device.sysname
+              ? { ...node, position }
+              : node,
+          ),
+        )
+      }, 0)
+
+      setStatus(`${device.sysname} op het canvas geplaatst.`)
+    },
+    [flowInstance, setNodes],
+  )
+
+  const deleteSelected = useCallback(() => {
+    if (selectedEdgeId) {
+      const edge = edges.find((item) => item.id === selectedEdgeId)
+
+      setEdges((current) =>
+        current.filter((item) => item.id !== selectedEdgeId),
+      )
+      setSelectedEdgeId(null)
+      setStatus(
+        `Kabel ${edge?.data?.cableNumber ?? selectedEdgeId} verwijderd.`,
+      )
+      return
+    }
+
+    if (selectedNodeId) {
+      const node = nodes.find((item) => item.id === selectedNodeId)
+
+      if (!node) {
+        setSelectedNodeId(null)
+        return
+      }
+
+      if (node.type === 'device') {
+        const connectedEdges = edges.filter(
+          (edge) =>
+            edge.source === selectedNodeId ||
+            edge.target === selectedNodeId,
+        )
+
+        const confirmed = window.confirm(
+          connectedEdges.length > 0
+            ? `Apparaat ${node.id} verwijderen? Ook ${connectedEdges.length} aangesloten kabel(s) worden verwijderd.`
+            : `Apparaat ${node.id} verwijderen?`,
+        )
+
+        if (!confirmed) return
+
+        setEdges((current) =>
+          current.filter(
+            (edge) =>
+              edge.source !== selectedNodeId &&
+              edge.target !== selectedNodeId,
+          ),
+        )
+        setDeletedDeviceIds((current) =>
+          current.includes(selectedNodeId)
+            ? current
+            : [...current, selectedNodeId],
+        )
+        setProjectDevices((current) =>
+          current.filter((device) => device.sysname !== selectedNodeId),
+        )
+        setNodes((current) =>
+          current.filter((item) => item.id !== selectedNodeId),
+        )
+        setSelectedNodeId(null)
+        setStatus(`Apparaat ${node.id} verwijderd.`)
+        return
+      }
+
+      if (node.type === 'graphic-u-route') {
+        setNodes((current) =>
+          current.filter((item) => item.id !== selectedNodeId),
+        )
+        setSelectedNodeId(null)
+        setStatus('U-lijn verwijderd.')
+      }
+    }
+  }, [
+    edges,
+    nodes,
+    selectedEdgeId,
+    selectedNodeId,
+    setEdges,
+    setNodes,
+  ])
+
+  /*
+   * Dit effect staat bewust ná deleteSelected.
+   * In de vorige versie werd deleteSelected eerder in App uitgelezen dan
+   * de const was geïnitialiseerd. Dat veroorzaakte de witte pagina.
+   */
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null
+      const isTyping =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable
+
+      if (isTyping) return
+
+      if (
+        (event.key === 'Delete' || event.key === 'Backspace') &&
+        (selectedEdgeId || selectedNodeId)
+      ) {
+        event.preventDefault()
+        deleteSelected()
+        return
+      }
+
+      const modifier = event.ctrlKey || event.metaKey
+      if (!modifier) return
+
+      if (event.key.toLowerCase() === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        undo()
+        return
+      }
+
+      if (
+        event.key.toLowerCase() === 'y' ||
+        (event.key.toLowerCase() === 'z' && event.shiftKey)
+      ) {
+        event.preventDefault()
+        redo()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [
+    deleteSelected,
+    redo,
+    selectedEdgeId,
+    selectedNodeId,
+    undo,
+  ])
+
+  const downloadTextFile = useCallback(
+    (
+      filename: string,
+      content: string,
+      mimeType = 'text/plain;charset=utf-8',
+    ) => {
+      const blob = new Blob([content], { type: mimeType })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+
+      anchor.href = url
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    },
+    [],
+  )
+
+  const csvValue = useCallback((value: unknown) => {
+    const text = value === undefined || value === null
+      ? ''
+      : String(value)
+
+    return `"${text.replaceAll('"', '""')}"`
+  }, [])
+
+  const safeProjectFilename = useCallback(() => {
+    const projectName = projectData?.project.name ?? 'av-project'
+
+    return projectName
+      .trim()
+      .replace(/[^a-zA-Z0-9-_]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'av-project'
+  }, [projectData])
+
+  const exportDeviceList = useCallback(() => {
+    if (!projectData) return
+
+    const typeMap = new Map(
+      libraryTypes.map((deviceType) => [
+        `${deviceType.mfg}/${deviceType.model}`,
+        deviceType,
+      ]),
+    )
+
+    const header = [
+      'System name',
+      'Manufacturer',
+      'Model',
+      'Description',
+      'Location',
+      'Rack',
+      'Rack level',
+      'Type reference',
+    ]
+
+    const rows = projectDevices.map((device) => {
+      const deviceType = typeMap.get(device.type_ref)
+
+      return [
+        device.sysname,
+        deviceType?.mfg ?? '',
+        deviceType?.model ?? '',
+        deviceType?.short_desc ?? '',
+        device.location,
+        device.rack,
+        device.rack_level ?? '',
+        device.type_ref,
+      ]
+    })
+
+    const csv = [header, ...rows]
+      .map((row) => row.map(csvValue).join(','))
+      .join('\r\n')
+
+    downloadTextFile(
+      `${safeProjectFilename()}-device-list.csv`,
+      csv,
+      'text/csv;charset=utf-8',
+    )
+    setStatus(`${rows.length} apparaten geëxporteerd.`)
+  }, [
+    csvValue,
+    downloadTextFile,
+    libraryTypes,
+    projectData,
+    projectDevices,
+    safeProjectFilename,
+  ])
+
+  const exportCableList = useCallback(() => {
+    const header = [
+      'Cable number',
+      'Signal',
+      'Source device',
+      'Source port',
+      'Target device',
+      'Target port',
+      'Display mode',
+    ]
+
+    const rows = edges.map((edge) => [
+      edge.data?.cableNumber ?? edge.id,
+      edge.data?.signal ?? '',
+      edge.data?.sourceDevice ?? edge.source,
+      edge.data?.sourcePort ?? edge.sourceHandle ?? '',
+      edge.data?.targetDevice ?? edge.target,
+      edge.data?.targetPort ?? edge.targetHandle ?? '',
+      edge.data?.displayMode ?? '',
+    ])
+
+    const csv = [header, ...rows]
+      .map((row) => row.map(csvValue).join(','))
+      .join('\r\n')
+
+    downloadTextFile(
+      `${safeProjectFilename()}-cable-list.csv`,
+      csv,
+      'text/csv;charset=utf-8',
+    )
+    setStatus(`${rows.length} kabels geëxporteerd.`)
+  }, [
+    csvValue,
+    downloadTextFile,
+    edges,
+    safeProjectFilename,
+  ])
+
+  const exportIoList = useCallback(() => {
+    const typeMap = new Map(
+      libraryTypes.map((deviceType) => [
+        `${deviceType.mfg}/${deviceType.model}`,
+        deviceType,
+      ]),
+    )
+
+    const connectionMap = new Map<string, CableEdge>()
+
+    edges.forEach((edge) => {
+      if (edge.data?.sourcePort) {
+        connectionMap.set(
+          `${edge.source}::${edge.data.sourcePort}`,
+          edge,
+        )
+      }
+
+      if (edge.data?.targetPort) {
+        connectionMap.set(
+          `${edge.target}::${edge.data.targetPort}`,
+          edge,
+        )
+      }
+    })
+
+    const header = [
+      'Device',
+      'Type',
+      'Port',
+      'Direction',
+      'Signal',
+      'Connector',
+      'Position',
+      'Connected',
+      'Cable number',
+      'Remote device',
+      'Remote port',
+    ]
+
+    const rows: Array<Array<string | number>> = []
+
+    projectDevices.forEach((device) => {
+      const deviceType = typeMap.get(device.type_ref)
+      if (!deviceType) return
+
+      ;[...deviceType.ports]
+        .sort((a, b) => a.pos - b.pos)
+        .forEach((port) => {
+          const edge = connectionMap.get(
+            `${device.sysname}::${port.label}`,
+          )
+
+          const isSource =
+            edge?.source === device.sysname &&
+            edge.data?.sourcePort === port.label
+
+          rows.push([
+            device.sysname,
+            device.type_ref,
+            port.label,
+            port.direction,
+            port.signal,
+            port.connector,
+            port.pos,
+            edge ? 'Yes' : 'No',
+            edge?.data?.cableNumber ?? '',
+            edge
+              ? isSource
+                ? edge.data?.targetDevice ?? edge.target
+                : edge.data?.sourceDevice ?? edge.source
+              : '',
+            edge
+              ? isSource
+                ? edge.data?.targetPort ?? ''
+                : edge.data?.sourcePort ?? ''
+              : '',
+          ])
+        })
+    })
+
+    const csv = [header, ...rows]
+      .map((row) => row.map(csvValue).join(','))
+      .join('\r\n')
+
+    downloadTextFile(
+      `${safeProjectFilename()}-io-list.csv`,
+      csv,
+      'text/csv;charset=utf-8',
+    )
+    setStatus(`${rows.length} I/O-regels geëxporteerd.`)
+  }, [
+    csvValue,
+    downloadTextFile,
+    edges,
+    libraryTypes,
+    projectDevices,
+    safeProjectFilename,
+  ])
+
+  const saveEditedCableNumber = useCallback(
+    (
+      edgeId: string,
+      newCableNumber: string,
+      prefix: string,
+      numericValue: number,
+    ) => {
+      const edge = edges.find((item) => item.id === edgeId)
+
+      if (!edge?.data) {
+        setStatus('De geselecteerde kabel kon niet worden gevonden.')
+        return
+      }
+
+      const signalId = edge.data.signal
+
+      setEdges((current) =>
+        current.map((item) =>
+          item.id === edgeId && item.data
+            ? {
+                ...item,
+                data: {
+                  ...item.data,
+                  cableNumber: newCableNumber,
+                },
+              }
+            : item,
+        ),
+      )
+
+      /*
+       * Het handmatig ingevoerde nummer wordt het nieuwe startpunt.
+       * De eerstvolgende automatisch gegenereerde kabel wordt +1.
+       * Als de gebruiker ook een andere prefix invoert, wordt die prefix
+       * voortaan voor dit signaaltype gebruikt.
+       */
+      setEngineeringSettings((current) => ({
+        ...current,
+        signalTypes: current.signalTypes.map((signal) =>
+          signal.id === signalId
+            ? {
+                ...signal,
+                prefix,
+                startNumber: numericValue,
+                nextNumber: numericValue + 1,
+              }
+            : signal,
+        ),
+      }))
+
+      setStatus(
+        `${newCableNumber} opgeslagen. ` +
+          `De volgende ${signalId}-kabel krijgt nummer ${prefix}${String(
+            numericValue + 1,
+          ).padStart(4, '0')}.`,
+      )
+    },
+    [edges, setEdges],
+  )
+
+  const buildProjectFile = useCallback((): SavedProjectFile | null => {
+    if (!projectData || !flowInstance) return null
+
+    const deviceNodes: SavedDeviceNode[] = nodes
+      .filter((node): node is DeviceNode => node.type === 'device')
+      .map((node) => ({
+        id: node.id,
+        position: node.position,
+      }))
+
+    const graphicRoutes: SavedGraphicRouteNode[] = nodes
+      .filter(
+        (node): node is GraphicURouteNode =>
+          node.type === 'graphic-u-route',
+      )
+      .map((node) => ({
+        id: node.id,
+        position: node.position,
+        data: {
+          signal: node.data.signal,
+          width: node.data.width,
+          leftHeight: node.data.leftHeight,
+          rightHeight: node.data.rightHeight,
+        },
+      }))
+
+    return {
+      format: 'av-engineering-project',
+      formatVersion: 1,
+      savedAt: new Date().toISOString(),
+      sourceProject: projectData.project,
+      projectDevices,
+      viewport: flowInstance.getViewport(),
+      deviceNodes,
+      deletedDeviceIds,
+      graphicRoutes,
+      edges,
+    }
+  }, [
+    deletedDeviceIds,
+    edges,
+    flowInstance,
+    nodes,
+    projectData,
+    projectDevices,
+  ])
+
+  const rememberCurrentProject = useCallback(
+    (projectFile: SavedProjectFile) => {
+      const id = [
+        projectFile.sourceProject.name,
+        projectFile.sourceProject.location,
+      ]
+        .join('::')
+        .toLowerCase()
+
+      const record: RecentProjectRecord = {
+        id,
+        name: projectFile.sourceProject.name,
+        location: projectFile.sourceProject.location,
+        updatedAt: projectFile.savedAt,
+        file: projectFile,
+      }
+
+      setRecentProjects((current) => [
+        record,
+        ...current.filter((item) => item.id !== id),
+      ].slice(0, MAX_RECENT_PROJECTS))
+    },
+    [],
+  )
+
+  const startNewProject = useCallback(() => {
+    setProjectEditorMode('new')
+    setProjectEditorValues({
+      name: 'Nieuw project',
+      location: '',
+      created_by: projectData?.project.created_by ?? '',
+      facility_id: 0,
+    })
+    setShowProjectEditor(true)
+  }, [projectData])
+
+  const editProjectDetails = useCallback(() => {
+    if (!projectData) return
+
+    setProjectEditorMode('edit')
+    setProjectEditorValues({
+      name: projectData.project.name,
+      location: projectData.project.location,
+      created_by: projectData.project.created_by,
+      facility_id: projectData.project.facility_id,
+    })
+    setShowProjectEditor(true)
+  }, [projectData])
+
+  const applyProjectEditor = useCallback(() => {
+    const cleanName = projectEditorValues.name.trim()
+
+    if (!cleanName) {
+      setStatus('Projectnaam is verplicht.')
+      return
+    }
+
+    const values: ProjectEditorValues = {
+      ...projectEditorValues,
+      name: cleanName,
+      location:
+        projectEditorValues.location.trim() || 'Onbekend',
+      created_by:
+        projectEditorValues.created_by.trim() || 'Onbekend',
+      facility_id: Number.isFinite(projectEditorValues.facility_id)
+        ? projectEditorValues.facility_id
+        : 0,
+    }
+
+    if (projectEditorMode === 'new') {
+      const newProject = createEmptyProjectData(values)
+
+      applyingHistoryRef.current = true
+      setProjectData(newProject)
+      setProjectDevices([])
+      setDeletedDeviceIds([])
+      setNodes([])
+      setEdges([])
+      setSelectedSource(null)
+      setSelectedEdgeId(null)
+      setSelectedNodeId(null)
+      setEditingDeviceId(null)
+      setToolMode('select')
+      resetHistory([], [])
+
+      window.requestAnimationFrame(() => {
+        flowInstance?.setViewport({
+          x: 0,
+          y: 0,
+          zoom: 1,
+        })
+        applyingHistoryRef.current = false
+      })
+
+      setStatus(`Nieuw project "${values.name}" aangemaakt.`)
+    } else {
+      setProjectData((current) =>
+        current
+          ? {
+              ...current,
+              project: {
+                ...current.project,
+                ...values,
+              },
+            }
+          : current,
+      )
+      setStatus('Projectgegevens bijgewerkt.')
+    }
+
+    setShowProjectEditor(false)
+  }, [
+    flowInstance,
+    projectEditorMode,
+    projectEditorValues,
+    resetHistory,
+    setEdges,
+    setNodes,
+  ])
+
+  const saveProject = useCallback(() => {
+    const file = buildProjectFile()
+
+    if (!file || !projectData) {
+      setStatus('Het project kan nog niet worden opgeslagen.')
+      return
+    }
+
+    rememberCurrentProject(file)
+
+    const safeProjectName = projectData.project.name
+      .trim()
+      .replace(/[^a-zA-Z0-9-_]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'av-project'
+
+    const blob = new Blob(
+      [JSON.stringify(file, null, 2)],
+      { type: 'application/json' },
+    )
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+
+    anchor.href = url
+    anchor.download = `${safeProjectName}.avproject`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+
+    setStatus('Projectbestand opgeslagen.')
+  }, [
+    buildProjectFile,
+    projectData,
+    rememberCurrentProject,
+  ])
+
+  const restoreProjectFile = useCallback(
+    (
+      projectFile: SavedProjectFile,
+      sourceName: string,
+    ) => {
+      const restoredProjectDevices =
+        Array.isArray(projectFile.projectDevices)
+          ? projectFile.projectDevices
+          : []
+
+      const legacyLibraryTypes =
+        'libraryTypes' in projectFile &&
+        Array.isArray(
+          (projectFile as SavedProjectFile & {
+            libraryTypes?: DeviceType[]
+          }).libraryTypes,
+        )
+          ? (
+              projectFile as SavedProjectFile & {
+                libraryTypes: DeviceType[]
+              }
+            ).libraryTypes
+          : []
+
+      if (legacyLibraryTypes.length > 0) {
+        setLibraryTypes((current) =>
+          mergeDeviceTypes(current, legacyLibraryTypes),
+        )
+      }
+
+      const restoredDeletedDeviceIds =
+        Array.isArray(projectFile.deletedDeviceIds)
+          ? projectFile.deletedDeviceIds
+          : []
+
+      const savedDevicePositions = new Map(
+        projectFile.deviceNodes.map((node) => [
+          node.id,
+          node.position,
+        ]),
+      )
+
+      const restoredTypeMap = new Map(
+        mergeDeviceTypes(
+          libraryTypes,
+          legacyLibraryTypes,
+        ).map((deviceType) => [
+          `${deviceType.mfg}/${deviceType.model}`,
+          deviceType,
+        ]),
+      )
+
+      const restoredDeviceNodes: DeviceNode[] =
+        restoredProjectDevices.flatMap((device, index) => {
+          if (restoredDeletedDeviceIds.includes(device.sysname)) {
+            return []
+          }
+
+          const deviceType = restoredTypeMap.get(device.type_ref)
+          if (!deviceType) return []
+
+          return [{
+            id: device.sysname,
+            type: 'device',
+            dragHandle: '.drag-handle',
+            position:
+              savedDevicePositions.get(device.sysname) ?? {
+                x: (index % 2) * 620,
+                y: Math.floor(index / 2) * 480,
+              },
+            data: {
+              sysname: device.sysname,
+              manufacturer: deviceType.mfg,
+              model: deviceType.model,
+              description: deviceType.short_desc,
+              location: device.location,
+              rack: device.rack,
+              ports: deviceType.ports,
+              selectedSource: null,
+              onPortClick,
+            },
+          }]
+        })
+
+      const restoredRoutes: GraphicURouteNode[] =
+        projectFile.graphicRoutes.map((route) => ({
+          id: route.id,
+          type: 'graphic-u-route',
+          dragHandle: '.drag-handle',
+          position: route.position,
+          data: {
+            ...route.data,
+            onChangeGeometry: changeRouteGeometry,
+          },
+        }))
+
+      const restoredNodes: AppNode[] = [
+        ...restoredDeviceNodes,
+        ...restoredRoutes,
+      ]
+
+      applyingHistoryRef.current = true
+      setProjectData({
+        project: projectFile.sourceProject,
+        types: [],
+        devices: restoredProjectDevices,
+      })
+      setProjectDevices(restoredProjectDevices)
+      setDeletedDeviceIds(restoredDeletedDeviceIds)
+      setNodes(restoredNodes)
+      setEdges(projectFile.edges)
+      resetHistory(restoredNodes, projectFile.edges)
+      setSelectedSource(null)
+      setSelectedEdgeId(null)
+      setSelectedNodeId(null)
+      setEditingDeviceId(null)
+      setToolMode('select')
+
+      window.requestAnimationFrame(() => {
+        flowInstance?.setViewport(projectFile.viewport)
+        applyingHistoryRef.current = false
+      })
+
+      rememberCurrentProject(projectFile)
+      setShowRecentProjects(false)
+      setStatus(`Project geopend: ${sourceName}`)
+    },
+    [
+      changeRouteGeometry,
+      flowInstance,
+      libraryTypes,
+      onPortClick,
+      rememberCurrentProject,
+      resetHistory,
+      setEdges,
+      setNodes,
+    ],
+  )
+  
+  const updateProjectProperty = useCallback(
+  (
+    field:
+      | 'projectName'
+      | 'location'
+      | 'createdBy'
+      | 'facilityId',
+    value: string | number,
+  ) => {
+    setProjectData((current) => {
+      if (!current) return current
+
+      const project = { ...current.project }
+
+      switch (field) {
+        case 'projectName':
+          project.name = String(value)
+          break
+
+        case 'location':
+          project.location = String(value)
+          break
+
+        case 'createdBy':
+          project.created_by = String(value)
+          break
+
+        case 'facilityId':
+          project.facility_id = Number(value)
+          break
+      }
+
+      return {
+        ...current,
+        project,
+      }
+    })
+  },
+  [],
+)
+
+
+
+
+
+  const openProject = useCallback(
+    async (selectedFile: File) => {
+      try {
+        const rawText = await selectedFile.text()
+        const parsed: unknown = JSON.parse(rawText)
+
+        if (
+          typeof parsed !== 'object' ||
+          parsed === null ||
+          !('format' in parsed) ||
+          !('formatVersion' in parsed)
+        ) {
+          throw new Error('Dit is geen geldig AV-projectbestand.')
+        }
+
+        const projectFile = parsed as SavedProjectFile
+
+        if (
+          projectFile.format !== 'av-engineering-project' ||
+          projectFile.formatVersion !== 1
+        ) {
+          throw new Error(
+            `Niet-ondersteunde projectversie: ${projectFile.formatVersion}`,
+          )
+        }
+
+        if (
+          !Array.isArray(projectFile.deviceNodes) ||
+          !Array.isArray(projectFile.graphicRoutes) ||
+          !Array.isArray(projectFile.edges)
+        ) {
+          throw new Error('Het projectbestand is onvolledig.')
+        }
+
+        restoreProjectFile(
+          projectFile,
+          selectedFile.name,
+        )
+      } catch (openError: unknown) {
+        setStatus(
+          openError instanceof Error
+            ? `Openen mislukt: ${openError.message}`
+            : 'Openen mislukt door een onbekende fout.',
+        )
+      } finally {
+        if (openProjectInputRef.current) {
+          openProjectInputRef.current.value = ''
+        }
+      }
+    },
+    [restoreProjectFile],
   )
 
   if (error) {
-    return (
-      <main>
-        <h1>AV Engineering Platform</h1>
-        <p>Fout: {error}</p>
-      </main>
-    )
+    return <main><h1>AV Engineering Platform</h1><p>Fout: {error}</p></main>
   }
 
   if (!projectData) {
-    return (
-      <main>
-        <h1>AV Engineering Platform</h1>
-        <p>Project wordt geladen...</p>
-      </main>
-    )
+    return <main><h1>AV Engineering Platform</h1><p>Project wordt geladen...</p></main>
   }
 
-  const toolbarButton = (mode: ToolMode, label: string) => (
-    <button
-      type="button"
-      onClick={() => {
-        setToolMode(mode)
-        setStatus(
-          mode === 'select'
-            ? 'Selecteren en verslepen.'
-            : 'Klik op het canvas om het object te plaatsen.',
-        )
-      }}
-      style={{
-        padding: '7px 10px',
-        border: toolMode === mode ? '2px solid #2563eb' : '1px solid #cbd5e1',
-        borderRadius: 4,
-        background: toolMode === mode ? '#eff6ff' : '#fff',
-        cursor: 'pointer',
-      }}
-    >
-      {label}
-    </button>
-  )
-
   return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#fff',
-      }}
-    >
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '8px 12px',
-          borderBottom: '1px solid #cbd5e1',
-          background: '#fff',
-        }}
-      >
-        <strong style={{ marginRight: 12 }}>AV Engineering Platform</strong>
-        {toolbarButton('select', 'Select')}
-        {toolbarButton('source-feather', 'Bron-feather')}
-        {toolbarButton('destination-feather', 'Doel-feather')}
-        {toolbarButton('bus', 'Bus')}
+    <div className="app-shell">
+      <header className="toolbar">
+        <strong>AV Engineering Platform</strong>
+        <span>{projectData.project.name}</span>
+
+        <button
+          type="button"
+          onClick={startNewProject}
+        >
+          Nieuw project
+        </button>
+
+        <button
+          type="button"
+          onClick={editProjectDetails}
+        >
+          Projectgegevens
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            setShowRecentProjects((current) => !current)
+          }
+        >
+          Recente projecten
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowReports(true)}
+        >
+          Rapporten / PDF
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+        >
+          Settings
+        </button>
+
+        <button
+          type="button"
+          onClick={undo}
+          disabled={!canUndo}
+          title="Ongedaan maken (Ctrl+Z)"
+        >
+          Undo
+        </button>
+
+        <button
+          type="button"
+          onClick={redo}
+          disabled={!canRedo}
+          title="Opnieuw uitvoeren (Ctrl+Y of Ctrl+Shift+Z)"
+        >
+          Redo
+        </button>
+
+        <button
+          type="button"
+          onClick={saveProject}
+        >
+          Project opslaan
+        </button>
+
+        <button
+          type="button"
+          onClick={() => openProjectInputRef.current?.click()}
+        >
+          Project openen
+        </button>
+
+        <input
+          ref={openProjectInputRef}
+          type="file"
+          accept=".avproject,application/json"
+          hidden
+          onChange={(event) => {
+            const selectedFile = event.target.files?.[0]
+            if (selectedFile) {
+              void openProject(selectedFile)
+            }
+          }}
+        />
+
+        <button
+          type="button"
+          className={toolMode === 'select' ? 'active-tool' : ''}
+          onClick={() => {
+            setToolMode('select')
+            setStatus('Selecteren, verslepen en kabels maken.')
+          }}
+        >
+          Select
+        </button>
+
+        <button
+          type="button"
+          className={
+            toolMode === 'place-graphic-route' ? 'active-tool' : ''
+          }
+          onClick={() => {
+            setToolMode('place-graphic-route')
+            setStatus('Klik op het canvas om de grafische U-route te plaatsen.')
+          }}
+        >
+          U-lijn tekenen
+        </button>
 
         <select
-          value={selectedSignal}
-          onChange={(event) => setSelectedSignal(event.target.value)}
-          style={{ marginLeft: 8, padding: '7px 9px' }}
+          value={routeSignal}
+          onChange={(event) => setRouteSignal(event.target.value)}
         >
-          {SIGNAL_OPTIONS.map((signal) => (
-            <option key={signal} value={signal}>
-              {signalName(signal)}
-            </option>
-          ))}
+          {(['DGV', 'DAT', 'AUD', 'CTRL', 'PWR'] as Signal[]).map(
+            (signal) => (
+              <option key={signal} value={signal}>
+                {signalName(signal)}
+              </option>
+            ),
+          )}
         </select>
 
-        <span style={{ marginLeft: 'auto', color: '#475569', fontSize: 12 }}>
-          Devices: {nodes.filter((node) => node.data.kind === 'device').length} ·
-          Kabels: {edges.length} · Bussen:{' '}
-          {nodes.filter((node) => node.data.kind === 'bus').length}
-        </span>
+        <button
+          type="button"
+          disabled={
+            !selectedNodeId ||
+            !nodes.some(
+              (node) =>
+                node.id === selectedNodeId &&
+                node.type === 'device',
+            )
+          }
+          onClick={() => {
+            if (selectedNodeId) {
+              setEditingDeviceId(selectedNodeId)
+            }
+          }}
+          title="Geselecteerd apparaat bewerken"
+        >
+          Apparaat bewerken
+        </button>
+
+        <button
+          type="button"
+          className="delete-button"
+          disabled={!selectedEdgeId && !selectedNodeId}
+          onClick={deleteSelected}
+          title="Geselecteerd object verwijderen (Delete)"
+        >
+          Verwijderen
+        </button>
+
+        <div className="toolbar-spacer" />
+
+        <button
+          type="button"
+          disabled={!selectedEdgeId}
+          onClick={() => setShowCableEditor(true)}
+          title="Nummer van de geselecteerde kabel wijzigen"
+        >
+          Kabelnummer
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSelectedCableMode('full')}
+        >
+          Volledige kabel
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSelectedCableMode('feather')}
+        >
+          Feather
+        </button>
       </header>
 
-      <div
-        style={{
-          padding: '6px 12px',
-          borderBottom: '1px solid #cbd5e1',
-          background: '#f8fafc',
-          color: '#334155',
-          fontSize: 11,
-        }}
-      >
-        {status}
+      <div className="status-bar">
+        <span>{status}</span>
+        <span className="history-status">
+          Undo: {undoStackRef.current.length} · Redo: {redoStackRef.current.length}
+        </span>
       </div>
 
-      <div style={{ flex: 1 }}>
-        <ReactFlow<AppNode, CableEdge>
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onInit={setFlowInstance}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          isValidConnection={isValidConnection}
-          onPaneClick={placeNode}
-          connectionLineType={ConnectionLineType.SmoothStep}
-          defaultEdgeOptions={{ type: 'smoothstep' }}
-          fitView
-          minZoom={0.15}
-          maxZoom={2}
-          deleteKeyCode={['Backspace', 'Delete']}
+      <div className="editor-workspace">
+        <LeftSidebar
+          onProjectItemClick={(item) => {
+            if (item === 'project-properties') {
+            setMainView('project')
+            }
+
+            if (item === 'settings') {
+            setMainView('settings')
+            }
+          }}
+          deviceLibrary={
+            <button
+              type="button"
+              className="explorer-item"
+              onClick={() => setMainView('device-library')}
+            >
+              Open Device Library
+            </button>
+          }
+          sheets={
+            <button
+              type="button"
+              className="explorer-item"
+              onClick={() => setMainView('canvas')}
+            >
+              Main
+            </button>
+          }
+          reports={
+            <>
+              <button
+                type="button"
+                className="explorer-item"
+                onClick={() => setMainView('reports')}
+              >
+                Cable List
+              </button>
+
+              <button
+                type="button"
+                className="explorer-item"
+                onClick={() => setMainView('reports')}
+              >
+                Device List
+              </button>
+
+              <button
+                type="button"
+                className="explorer-item"
+                onClick={() => setMainView('reports')}
+              >
+                I/O List
+              </button>
+            </>
+          }
+/>
+        
+<Workspace
+  activeView={mainView}
+  canvas={
+    <CanvasView>
+      <ReactFlow<AppNode, CableEdge>
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onInit={setFlowInstance}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onPaneClick={(event) => {
+          setSelectedEdgeId(null)
+          setSelectedNodeId(null)
+          placeGraphicRoute(event)
+        }}
+        onNodeClick={(_, node) => {
+          setSelectedNodeId(node.id)
+          setSelectedEdgeId(null)
+          setStatus(
+            node.type === 'device'
+              ? `Apparaat ${node.id} geselecteerd.`
+              : 'U-lijn geselecteerd.',
+          )
+        }}
+        onNodeDoubleClick={(_, node) => {
+          if (node.type !== 'device') return
+
+          setEditingDeviceId(node.id)
+          setSelectedNodeId(node.id)
+          setSelectedEdgeId(null)
+          setStatus(`Apparaat ${node.id} wordt bewerkt.`)
+        }}
+        onEdgeClick={(_, edge) => {
+          setSelectedEdgeId(edge.id)
+          setSelectedNodeId(null)
+          setStatus(
+            `Kabel ${
+              edge.data?.cableNumber ?? edge.id
+            } geselecteerd.`,
+          )
+        }}
+        onEdgeDoubleClick={(_, edge) => {
+          setSelectedEdgeId(edge.id)
+          setEdges((current) =>
+            current.map((item) =>
+              item.id === edge.id && item.data
+                ? {
+                    ...item,
+                    data: {
+                      ...item.data,
+                      displayMode: nextDisplayMode(
+                        item.data.displayMode,
+                      ),
+                    },
+                  }
+                : item,
+            ),
+          )
+        }}
+        {...REACT_FLOW_CONFIG}
+      >
+        <ReactFlowViewport />
+      </ReactFlow>
+  
+    </CanvasView>
+  }
+  deviceLibrary={
+    <div className="workspace-view workspace-library-view">
+      <DeviceLibrary
+        types={libraryTypes}
+        devices={projectDevices}
+        onCreateType={createDeviceType}
+        onUpdateType={updateDeviceType}
+        onDeleteType={deleteDeviceType}
+        onPlaceDevice={placeLibraryDevice}
+        onImportJson={importLibraryJson}
+        signalTypes={engineeringSettings.signalTypes}
+        connectors={engineeringSettings.connectors}
+      />
+    </div>
+  }
+  project={
+    <div className="workspace-placeholder">
+      <div>
+        <h2>Project</h2>
+        <p>
+          Projectgegevens worden voorlopig in het
+          Properties-paneel bewerkt.
+        </p>
+        <button
+          type="button"
+          onClick={editProjectDetails}
         >
-          <Background gap={20} size={1} />
-          <Controls />
-          <MiniMap pannable zoomable />
-        </ReactFlow>
+          Uitgebreide projectgegevens openen
+        </button>
       </div>
+    </div>
+  }
+  reports={
+    <div className="workspace-placeholder">
+      <div>
+        <h2>Reports</h2>
+        <p>
+          Exporteer de actuele projectgegevens en tekening.
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowReports(true)}
+        >
+          Rapporten en PDF openen
+        </button>
+      </div>
+    </div>
+  }
+  settings={
+    <div className="workspace-placeholder">
+      <div>
+        <h2>Settings</h2>
+        <p>
+          Beheer signal types, connectors en kabelnummering.
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+        >
+          Engineering Settings openen
+        </button>
+      </div>
+    </div>
+  }
+/>
+      
+      
+      <RightSidebar
+        selection={{
+          type: 'project',
+          projectName: projectData.project.name,
+          location: projectData.project.location,
+          createdBy: projectData.project.created_by,
+          facilityId: projectData.project.facility_id,
+        }}
+        onProjectChange={updateProjectProperty}
+      />
+
+
+      </div>
+
+      <CableNumberEditor
+        isOpen={showCableEditor}
+        edgeId={selectedEdgeId}
+        edgeData={
+          selectedEdgeId
+            ? edges.find((edge) => edge.id === selectedEdgeId)?.data ?? null
+            : null
+        }
+        existingCableNumbers={edges.flatMap((edge) =>
+          edge.data?.cableNumber ? [edge.data.cableNumber] : [],
+        )}
+        signalTypes={engineeringSettings.signalTypes}
+        onClose={() => setShowCableEditor(false)}
+        onSave={saveEditedCableNumber}
+      />
+
+      <SettingsDialog
+        isOpen={showSettings}
+        settings={engineeringSettings}
+        onClose={() => setShowSettings(false)}
+        onSave={setEngineeringSettings}
+      />
+
+      <PdfExportDialog
+        isOpen={showPdfExport}
+        project={projectData.project}
+        nodes={nodes}
+        onClose={() => setShowPdfExport(false)}
+        onStatus={setStatus}
+      />
+
+      {showReports && (
+        <div
+          className="reports-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowReports(false)
+            }
+          }}
+        >
+          <section className="reports-dialog">
+            <header>
+              <div>
+                <h2>Rapporten en export</h2>
+                <p>{projectData.project.name}</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowReports(false)}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="report-export-grid">
+              <button type="button" onClick={exportDeviceList}>
+                <strong>Device list</strong>
+                <span>Alle geplaatste apparaten als CSV</span>
+              </button>
+
+              <button type="button" onClick={exportCableList}>
+                <strong>Cable list</strong>
+                <span>Kabelnummers, bronnen en bestemmingen als CSV</span>
+              </button>
+
+              <button type="button" onClick={exportIoList}>
+                <strong>I/O list</strong>
+                <span>Alle poorten en aansluitstatus als CSV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReports(false)
+                  setShowPdfExport(true)
+                }}
+              >
+                <strong>Professionele PDF</strong>
+                <span>
+                  Titelblok, revisie, papierformaat en meerdere pagina’s
+                </span>
+              </button>
+            </div>
+
+            <footer>
+              <span>
+                Devices: {projectDevices.length} · Kabels: {edges.length}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setShowReports(false)}
+              >
+                Sluiten
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {showProjectEditor && (
+        <div
+          className="project-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowProjectEditor(false)
+            }
+          }}
+        >
+          <section className="project-dialog">
+            <header>
+              <h2>
+                {projectEditorMode === 'new'
+                  ? 'Nieuw project'
+                  : 'Projectgegevens'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowProjectEditor(false)}
+              >
+                ×
+              </button>
+            </header>
+
+            <label>
+              Projectnaam
+              <input
+                value={projectEditorValues.name}
+                onChange={(event) =>
+                  setProjectEditorValues((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              Locatie
+              <input
+                value={projectEditorValues.location}
+                onChange={(event) =>
+                  setProjectEditorValues((current) => ({
+                    ...current,
+                    location: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              Aangemaakt door
+              <input
+                value={projectEditorValues.created_by}
+                onChange={(event) =>
+                  setProjectEditorValues((current) => ({
+                    ...current,
+                    created_by: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              Facility-ID
+              <input
+                type="number"
+                value={projectEditorValues.facility_id}
+                onChange={(event) =>
+                  setProjectEditorValues((current) => ({
+                    ...current,
+                    facility_id: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+
+            <footer>
+              <button
+                type="button"
+                onClick={() => setShowProjectEditor(false)}
+              >
+                Annuleren
+              </button>
+              <button
+                type="button"
+                className="primary-project-button"
+                onClick={applyProjectEditor}
+              >
+                {projectEditorMode === 'new'
+                  ? 'Project aanmaken'
+                  : 'Wijzigingen bewaren'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {showRecentProjects && (
+        <aside className="recent-projects-panel">
+          <header>
+            <strong>Recente projecten</strong>
+            <button
+              type="button"
+              onClick={() => setShowRecentProjects(false)}
+            >
+              ×
+            </button>
+          </header>
+
+          {recentProjects.length === 0 ? (
+            <p>Nog geen lokaal bewaarde projecten.</p>
+          ) : (
+            <div className="recent-project-list">
+              {recentProjects.map((recent) => (
+                <article key={recent.id}>
+                  <div>
+                    <strong>{recent.name}</strong>
+                    <span>{recent.location}</span>
+                    <small>
+                      {new Date(recent.updatedAt).toLocaleString()}
+                    </small>
+                  </div>
+
+                  <div className="recent-project-actions">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        restoreProjectFile(
+                          recent.file,
+                          recent.name,
+                        )
+                      }
+                    >
+                      Open
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRecentProjects((current) =>
+                          current.filter(
+                            (item) => item.id !== recent.id,
+                          ),
+                        )
+                      }
+                    >
+                      Verwijder
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </aside>
+      )}
+
+      <DeviceInstanceEditor
+        device={
+          editingDeviceId
+            ? projectDevices.find(
+                (device) => device.sysname === editingDeviceId,
+              ) ?? null
+            : null
+        }
+        types={libraryTypes}
+        devices={projectDevices}
+        onCancel={() => setEditingDeviceId(null)}
+        onSave={updateDeviceInstance}
+      />
     </div>
   )
 }
