@@ -8,8 +8,10 @@ export function CanvasView({
   children,
 }: CanvasViewProps) {
   return (
-    <div className="canvas-view">
-      {children}
-    </div>
+    <main className="canvas-view">
+      <div className="flow-area">
+        {children}
+      </div>
+    </main>
   )
 }
