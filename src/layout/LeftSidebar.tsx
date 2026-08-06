@@ -1,51 +1,81 @@
-type ExplorerSection = {
-  id: string
-  label: string
-  items: string[]
+import { useState, type ReactNode } from 'react'
+
+type ExplorerSectionId =
+  | 'project'
+  | 'device-library'
+  | 'project-devices'
+  | 'sheets'
+  | 'reports'
+
+type ExplorerSectionProps = {
+  id: ExplorerSectionId
+  title: string
+  children: ReactNode
+  defaultOpen?: boolean
 }
 
-const sections: ExplorerSection[] = [
-  {
-    id: 'project',
-    label: 'Project',
-    items: ['Projectgegevens', 'Settings'],
-  },
-  {
-    id: 'library',
-    label: 'Device Library',
-    items: ['Video', 'Audio', 'Network', 'Custom'],
-  },
-  {
-    id: 'devices',
-    label: 'Project Devices',
-    items: [],
-  },
-  {
-    id: 'sheets',
-    label: 'Sheets',
-    items: ['Main'],
-  },
-  {
-    id: 'reports',
-    label: 'Reports',
-    items: ['Cable List', 'Device List', 'I/O List'],
-  },
-]
+function ExplorerSection({
+  id,
+  title,
+  children,
+  defaultOpen = true,
+}: ExplorerSectionProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+
+  return (
+    <section className="explorer-section" data-section-id={id}>
+      <button
+        type="button"
+        className="explorer-section-header"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span className="explorer-chevron">
+          {isOpen ? '▾' : '▸'}
+        </span>
+
+        <span>{title}</span>
+      </button>
+
+      {isOpen && (
+        <div className="explorer-section-content">
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}
 
 type LeftSidebarProps = {
-  onItemClick?: (
-    sectionId: string,
-    item: string,
+  deviceLibrary?: ReactNode
+  projectDevices?: ReactNode
+  sheets?: ReactNode
+  reports?: ReactNode
+  onProjectItemClick?: (
+    item: 'project-properties' | 'settings',
   ) => void
 }
 
 export function LeftSidebar({
-  onItemClick,
+  deviceLibrary,
+  projectDevices,
+  sheets,
+  reports,
+  onProjectItemClick,
 }: LeftSidebarProps) {
   return (
-    <div className="explorer-panel">
+    <aside className="explorer-panel">
       <header className="panel-header">
         <strong>Explorer</strong>
+
+        <button
+          type="button"
+          className="panel-header-action"
+          title="Explorer-opties"
+          aria-label="Explorer-opties"
+        >
+          ⋯
+        </button>
       </header>
 
       <div className="explorer-search">
@@ -57,37 +87,77 @@ export function LeftSidebar({
       </div>
 
       <div className="explorer-sections">
-        {sections.map((section) => (
-          <details
-            key={section.id}
-            className="explorer-section"
-            open
+        <ExplorerSection id="project" title="Project">
+          <button
+            type="button"
+            className="explorer-item"
+            onClick={() =>
+              onProjectItemClick?.('project-properties')
+            }
           >
-            <summary>{section.label}</summary>
+            Projectgegevens
+          </button>
 
-            <div className="explorer-items">
-              {section.items.length === 0 ? (
-                <span className="explorer-empty">
-                  Nog geen items
-                </span>
-              ) : (
-                section.items.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    className="explorer-item"
-                    onClick={() =>
-                      onItemClick?.(section.id, item)
-                    }
-                  >
-                    {item}
-                  </button>
-                ))
-              )}
-            </div>
-          </details>
-        ))}
+          <button
+            type="button"
+            className="explorer-item"
+            onClick={() => onProjectItemClick?.('settings')}
+          >
+            Settings
+          </button>
+        </ExplorerSection>
+
+        <ExplorerSection
+          id="device-library"
+          title="Device Library"
+        >
+          {deviceLibrary ?? (
+            <span className="explorer-empty">
+              Device Library wordt hier gekoppeld
+            </span>
+          )}
+        </ExplorerSection>
+
+        <ExplorerSection
+          id="project-devices"
+          title="Project Devices"
+        >
+          {projectDevices ?? (
+            <span className="explorer-empty">
+              Nog geen projectapparaten gekoppeld
+            </span>
+          )}
+        </ExplorerSection>
+
+        <ExplorerSection id="sheets" title="Sheets">
+          {sheets ?? (
+            <button
+              type="button"
+              className="explorer-item explorer-item-selected"
+            >
+              Main
+            </button>
+          )}
+        </ExplorerSection>
+
+        <ExplorerSection id="reports" title="Reports">
+          {reports ?? (
+            <>
+              <button type="button" className="explorer-item">
+                Cable List
+              </button>
+
+              <button type="button" className="explorer-item">
+                Device List
+              </button>
+
+              <button type="button" className="explorer-item">
+                I/O List
+              </button>
+            </>
+          )}
+        </ExplorerSection>
       </div>
-    </div>
+    </aside>
   )
 }
