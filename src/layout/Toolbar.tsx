@@ -71,33 +71,39 @@ export function Toolbar({
   onCableModeChange,
 }: ToolbarProps) {
   return (
-    <header className="toolbar">
+  <header className="toolbar toolbar-modern">
+    <div className="toolbar-brand">
       <strong>AV Engineering Platform</strong>
       <span>{projectName}</span>
+    </div>
 
+    <div className="toolbar-group">
       <button type="button" onClick={onNewProject}>
-        Nieuw project
-      </button>
-
-      <button type="button" onClick={onEditProject}>
-        Projectgegevens
+        Nieuw
       </button>
 
       <button
         type="button"
-        onClick={onToggleRecentProjects}
+        onClick={() => openProjectInputRef.current?.click()}
       >
-        Recente projecten
+        Openen
       </button>
 
-      <button type="button" onClick={onOpenReports}>
-        Rapporten / PDF
+      <button type="button" onClick={onSaveProject}>
+        Opslaan
       </button>
+      <button type="button" onClick={onEditProject}>
+  Project
+</button>
 
-      <button type="button" onClick={onOpenSettings}>
-        Settings
-      </button>
+<button type="button" onClick={onToggleRecentProjects}>
+  Recent
+</button>
+    </div>
 
+    <div className="toolbar-separator" />
+
+    <div className="toolbar-group">
       <button
         type="button"
         onClick={onUndo}
@@ -115,39 +121,14 @@ export function Toolbar({
       >
         Redo
       </button>
+    </div>
 
-      <button type="button" onClick={onSaveProject}>
-        Project opslaan
-      </button>
+    <div className="toolbar-separator" />
 
+    <div className="toolbar-group">
       <button
         type="button"
-        onClick={() => openProjectInputRef.current?.click()}
-      >
-        Project openen
-      </button>
-
-      <input
-        ref={openProjectInputRef}
-        type="file"
-        accept=".avproject,application/json"
-        hidden
-        onChange={(event) => {
-          const selectedFile = event.target.files?.[0]
-
-          if (selectedFile) {
-            onOpenProject(selectedFile)
-          }
-
-          event.target.value = ''
-        }}
-      />
-
-      <button
-        type="button"
-        className={
-          toolMode === 'select' ? 'active-tool' : ''
-        }
+        className={toolMode === 'select' ? 'active-tool' : ''}
         onClick={onSelectTool}
       >
         Select
@@ -162,7 +143,7 @@ export function Toolbar({
         }
         onClick={onGraphicRouteTool}
       >
-        U-lijn tekenen
+        U-lijn
       </button>
 
       <select
@@ -178,14 +159,17 @@ export function Toolbar({
           </option>
         ))}
       </select>
+    </div>
 
+    <div className="toolbar-separator" />
+
+    <div className="toolbar-group">
       <button
         type="button"
         disabled={!canEditDevice}
         onClick={onEditDevice}
-        title="Geselecteerd apparaat bewerken"
       >
-        Apparaat bewerken
+        Bewerken
       </button>
 
       <button
@@ -193,37 +177,67 @@ export function Toolbar({
         className="delete-button"
         disabled={!canDelete}
         onClick={onDelete}
-        title="Geselecteerd object verwijderen (Delete)"
       >
         Verwijderen
       </button>
-
-      <div className="toolbar-spacer" />
 
       <button
         type="button"
         disabled={!hasSelectedEdge}
         onClick={onEditCableNumber}
-        title="Nummer van de geselecteerde kabel wijzigen"
       >
         Kabelnummer
       </button>
+     <button
+  type="button"
+  disabled={!hasSelectedEdge}
+  onClick={() => onCableModeChange('full')}
+>
+  Volledige kabel
+</button>
 
+<button
+  type="button"
+  disabled={!hasSelectedEdge}
+  onClick={() => onCableModeChange('feather')}
+>
+  Feather
+</button> 
+    </div>
+
+    <div className="toolbar-spacer" />
+
+    <div className="toolbar-group">
       <button
         type="button"
-        disabled={!hasSelectedEdge}
-        onClick={() => onCableModeChange('full')}
+        onClick={onOpenReports}
       >
-        Volledige kabel
+        Rapporten
       </button>
 
       <button
         type="button"
-        disabled={!hasSelectedEdge}
-        onClick={() => onCableModeChange('feather')}
+        onClick={onOpenSettings}
       >
-        Feather
+        Settings
       </button>
-    </header>
-  )
+    </div>
+
+    <input
+      ref={openProjectInputRef}
+      type="file"
+      accept=".avproject,application/json"
+      hidden
+      onChange={(event) => {
+        const selectedFile = event.target.files?.[0]
+
+        if (selectedFile) {
+          onOpenProject(selectedFile)
+        }
+
+        event.target.value = ''
+      }}
+    />
+  </header>
+)
 }
