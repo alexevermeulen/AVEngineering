@@ -34,6 +34,7 @@ import { CableNumberEditor } from './CableNumberEditor'
 import { LeftSidebar } from './layout/LeftSidebar'
 import { RightSidebar } from './layout/RightSidebar'
 import { Workspace } from './layout/Workspace'
+import { Toolbar } from './layout/Toolbar'
 
 import type {
   CableDisplayMode,
@@ -2088,184 +2089,60 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="toolbar">
-        <strong>AV Engineering Platform</strong>
-        <span>{projectData.project.name}</span>
 
-        <button
-          type="button"
-          onClick={startNewProject}
-        >
-          Nieuw project
-        </button>
+<Toolbar
+  projectName={projectData.project.name}
+  toolMode={toolMode}
+  routeSignal={routeSignal}
+  routeSignals={['DGV', 'DAT', 'AUD', 'CTRL', 'PWR']}
+  canUndo={canUndo}
+  canRedo={canRedo}
+  canEditDevice={Boolean(
+    selectedNodeId &&
+      nodes.some(
+        (node) =>
+          node.id === selectedNodeId &&
+          node.type === 'device',
+      ),
+  )}
+  canDelete={Boolean(selectedEdgeId || selectedNodeId)}
+  hasSelectedEdge={Boolean(selectedEdgeId)}
+  openProjectInputRef={openProjectInputRef}
+  signalName={signalName}
+  onNewProject={startNewProject}
+  onEditProject={editProjectDetails}
+  onToggleRecentProjects={() =>
+    setShowRecentProjects((current) => !current)
+  }
+  onOpenReports={() => setShowReports(true)}
+  onOpenSettings={() => setShowSettings(true)}
+  onUndo={undo}
+  onRedo={redo}
+  onSaveProject={saveProject}
+  onOpenProject={(file) => {
+    void openProject(file)
+  }}
+  onSelectTool={() => {
+    setToolMode('select')
+    setStatus('Selecteren, verslepen en kabels maken.')
+  }}
+  onGraphicRouteTool={() => {
+    setToolMode('place-graphic-route')
+    setStatus(
+      'Klik op het canvas om de grafische U-route te plaatsen.',
+    )
+  }}
+  onRouteSignalChange={setRouteSignal}
+  onEditDevice={() => {
+    if (selectedNodeId) {
+      setEditingDeviceId(selectedNodeId)
+    }
+  }}
+  onDelete={deleteSelected}
+  onEditCableNumber={() => setShowCableEditor(true)}
+  onCableModeChange={setSelectedCableMode}
+/>
 
-        <button
-          type="button"
-          onClick={editProjectDetails}
-        >
-          Projectgegevens
-        </button>
-
-        <button
-          type="button"
-          onClick={() =>
-            setShowRecentProjects((current) => !current)
-          }
-        >
-          Recente projecten
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowReports(true)}
-        >
-          Rapporten / PDF
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowSettings(true)}
-        >
-          Settings
-        </button>
-
-        <button
-          type="button"
-          onClick={undo}
-          disabled={!canUndo}
-          title="Ongedaan maken (Ctrl+Z)"
-        >
-          Undo
-        </button>
-
-        <button
-          type="button"
-          onClick={redo}
-          disabled={!canRedo}
-          title="Opnieuw uitvoeren (Ctrl+Y of Ctrl+Shift+Z)"
-        >
-          Redo
-        </button>
-
-        <button
-          type="button"
-          onClick={saveProject}
-        >
-          Project opslaan
-        </button>
-
-        <button
-          type="button"
-          onClick={() => openProjectInputRef.current?.click()}
-        >
-          Project openen
-        </button>
-
-        <input
-          ref={openProjectInputRef}
-          type="file"
-          accept=".avproject,application/json"
-          hidden
-          onChange={(event) => {
-            const selectedFile = event.target.files?.[0]
-            if (selectedFile) {
-              void openProject(selectedFile)
-            }
-          }}
-        />
-
-        <button
-          type="button"
-          className={toolMode === 'select' ? 'active-tool' : ''}
-          onClick={() => {
-            setToolMode('select')
-            setStatus('Selecteren, verslepen en kabels maken.')
-          }}
-        >
-          Select
-        </button>
-
-        <button
-          type="button"
-          className={
-            toolMode === 'place-graphic-route' ? 'active-tool' : ''
-          }
-          onClick={() => {
-            setToolMode('place-graphic-route')
-            setStatus('Klik op het canvas om de grafische U-route te plaatsen.')
-          }}
-        >
-          U-lijn tekenen
-        </button>
-
-        <select
-          value={routeSignal}
-          onChange={(event) => setRouteSignal(event.target.value)}
-        >
-          {(['DGV', 'DAT', 'AUD', 'CTRL', 'PWR'] as Signal[]).map(
-            (signal) => (
-              <option key={signal} value={signal}>
-                {signalName(signal)}
-              </option>
-            ),
-          )}
-        </select>
-
-        <button
-          type="button"
-          disabled={
-            !selectedNodeId ||
-            !nodes.some(
-              (node) =>
-                node.id === selectedNodeId &&
-                node.type === 'device',
-            )
-          }
-          onClick={() => {
-            if (selectedNodeId) {
-              setEditingDeviceId(selectedNodeId)
-            }
-          }}
-          title="Geselecteerd apparaat bewerken"
-        >
-          Apparaat bewerken
-        </button>
-
-        <button
-          type="button"
-          className="delete-button"
-          disabled={!selectedEdgeId && !selectedNodeId}
-          onClick={deleteSelected}
-          title="Geselecteerd object verwijderen (Delete)"
-        >
-          Verwijderen
-        </button>
-
-        <div className="toolbar-spacer" />
-
-        <button
-          type="button"
-          disabled={!selectedEdgeId}
-          onClick={() => setShowCableEditor(true)}
-          title="Nummer van de geselecteerde kabel wijzigen"
-        >
-          Kabelnummer
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSelectedCableMode('full')}
-        >
-          Volledige kabel
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSelectedCableMode('feather')}
-        >
-          Feather
-        </button>
-      </header>
 
       <div className="status-bar">
         <span>{status}</span>
