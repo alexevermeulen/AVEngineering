@@ -39,6 +39,13 @@ type ToolbarProps = {
   onDelete: () => void
   onEditCableNumber: () => void
   onCableModeChange: (mode: 'full' | 'feather') => void
+  
+  onZoomFit: () => void
+  onZoom50: () => void
+  onZoom75: () => void
+  onZoom100: () => void
+
+
 }
 
 export function Toolbar({
@@ -69,6 +76,10 @@ export function Toolbar({
   onDelete,
   onEditCableNumber,
   onCableModeChange,
+  onZoomFit,
+  onZoom50,
+  onZoom75,
+  onZoom100,
 }: ToolbarProps) {
   return (
   <header className="toolbar toolbar-modern">
@@ -204,6 +215,28 @@ export function Toolbar({
   Feather
 </button> 
     </div>
+<div className="toolbar-separator" />
+
+<div className="toolbar-group">
+  <button type="button" onClick={onZoomFit}>
+    Fit
+  </button>
+
+  <button type="button" onClick={onZoom50}>
+    50%
+  </button>
+
+  <button type="button" onClick={onZoom75}>
+    75%
+  </button>
+
+  <button type="button" onClick={onZoom100}>
+    100%
+  </button>
+</div>
+
+
+
 
     <div className="toolbar-spacer" />
 

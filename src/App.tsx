@@ -2141,6 +2141,44 @@ function App() {
   onDelete={deleteSelected}
   onEditCableNumber={() => setShowCableEditor(true)}
   onCableModeChange={setSelectedCableMode}
+
+onZoomFit={() => {
+  if (!flowInstance) return
+
+  void flowInstance.fitView({
+    padding: 0.1,
+    duration: 250,
+  })
+}}
+
+onZoom50={() => {
+  if (!flowInstance) return
+
+  void flowInstance.zoomTo(0.5, {
+    duration: 200,
+  })
+}}
+
+onZoom75={() => {
+  if (!flowInstance) return
+
+  void flowInstance.zoomTo(0.75, {
+    duration: 200,
+  })
+}}
+
+onZoom100={() => {
+  if (!flowInstance) return
+
+  void flowInstance.zoomTo(1, {
+    duration: 200,
+  })
+}}
+
+
+
+
+
 />
 
 
