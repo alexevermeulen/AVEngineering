@@ -45,6 +45,7 @@ import { LeftSidebar } from './layout/LeftSidebar'
 import { RightSidebar } from './layout/RightSidebar'
 import { Workspace } from './layout/Workspace'
 import { Toolbar } from './layout/Toolbar'
+import { getPortsForSheet } from './canvas/SheetPorts'
 
 import type {
   CableDisplayMode,
@@ -557,7 +558,7 @@ const activeSheet = useMemo(
         description: deviceType.short_desc,
         location: device.location,
         rack: device.rack,
-        ports: deviceType.ports,
+        ports: getPortsForSheet(deviceType, activeSheet),
         selectedSource: null,
         onPortClick: () => undefined,
       }
@@ -573,7 +574,12 @@ const activeSheet = useMemo(
         data,
       }]
     })
-  }, [libraryTypes, projectData, projectDevices])
+ }, [
+  activeSheet,
+  libraryTypes,
+  projectData,
+  projectDevices,
+])
 
   const [nodes, setNodes, onNodesChange] =
     useNodesState<AppNode>([])
@@ -1289,39 +1295,136 @@ useEffect(() => {
     [projectDevices],
   )
 
-  const placeLibraryDevice = useCallback(
-    (device: Device) => {
-      if (!flowInstance) {
-        setStatus('Het canvas is nog niet gereed.')
-        return
-      }
+const placeLibraryDevice = useCallback(
+  (device: Device) => {
+    if (!flowInstance) {
+      setStatus('Het canvas is nog niet gereed.')
+      return
+    }
 
-      const position = flowInstance.screenToFlowPosition({
+    /*
+     * Hetzelfde fysieke/projectapparaat mag op meerdere
+     * sheets voorkomen, maar slechts één keer per sheet.
+     */
+    const alreadyPlacedOnSheet = nodes.some(
+      (node) =>
+        node.type === 'device' &&
+        node.id === device.sysname,
+    )
+
+    if (alreadyPlacedOnSheet) {
+      setStatus(
+        `${device.sysname} staat al op sheet ${activeSheet.name}.`,
+      )
+      return
+    }
+
+    const deviceType = libraryTypes.find(
+      (type) =>
+        `${type.mfg}/${type.model}` === device.type_ref,
+    )
+
+    if (!deviceType) {
+      setStatus(
+        `Apparaattype ${device.type_ref} kon niet worden gevonden.`,
+      )
+      return
+    }
+
+    const ports = getPortsForSheet(
+      deviceType,
+      activeSheet,
+    )
+
+    /*
+     * Op een gespecialiseerde sheet heeft plaatsing zonder
+     * relevante poorten normaal gesproken geen nut.
+     */
+    if (
+      activeSheet.signals !== null &&
+      ports.length === 0
+    ) {
+      setStatus(
+        `${device.sysname} heeft geen aansluitingen voor sheet ${activeSheet.name}.`,
+      )
+      return
+    }
+
+    const position =
+      flowInstance.screenToFlowPosition({
         x: window.innerWidth * 0.62,
         y: window.innerHeight * 0.5,
       })
 
-      setProjectDevices((current) => [...current, device])
-      setDeletedDeviceIds((current) =>
-        current.filter((id) => id !== device.sysname),
-      )
+    /*
+     * Alleen toevoegen aan de projectdatabase als dit
+     * apparaat daar nog niet bestaat.
+     */
+    const alreadyInProject = projectDevices.some(
+      (projectDevice) =>
+        projectDevice.sysname === device.sysname,
+    )
 
-      // De baseNodes-effect maakt het device aan; daarna corrigeren we de
-      // positie naar het midden van het zichtbare canvas.
-      window.setTimeout(() => {
-        setNodes((current) =>
-          current.map((node) =>
-            node.id === device.sysname
-              ? { ...node, position }
-              : node,
-          ),
-        )
-      }, 0)
+    if (!alreadyInProject) {
+      setProjectDevices((current) => [
+        ...current,
+        device,
+      ])
+    }
 
-      setStatus(`${device.sysname} op het canvas geplaatst.`)
-    },
-    [flowInstance, setNodes],
-  )
+    const node: DeviceNode = {
+      id: device.sysname,
+      type: 'device',
+      dragHandle: '.drag-handle',
+      position,
+      data: {
+        sysname: device.sysname,
+        manufacturer: deviceType.mfg,
+        model: deviceType.model,
+        description: deviceType.short_desc,
+        location: device.location,
+        rack: device.rack,
+        ports,
+        selectedSource,
+        onPortClick,
+      },
+    }
+
+    setNodes((current) => [
+      ...current,
+      node,
+    ])
+
+    /*
+     * Nog nodig voor compatibiliteit met het huidige
+     * projectformaat. Dit bouwen we later om.
+     */
+    setDeletedDeviceIds((current) =>
+      current.filter(
+        (id) => id !== device.sysname,
+      ),
+    )
+
+    setSelectedNodeId(device.sysname)
+    setSelectedEdgeId(null)
+
+    setStatus(
+      alreadyInProject
+        ? `${device.sysname} ook op sheet ${activeSheet.name} geplaatst.`
+        : `${device.sysname} aan project toegevoegd en op sheet ${activeSheet.name} geplaatst.`,
+    )
+  },
+  [
+    activeSheet,
+    flowInstance,
+    libraryTypes,
+    nodes,
+    onPortClick,
+    projectDevices,
+    selectedSource,
+    setNodes,
+  ],
+)
 
   const deleteSelected = useCallback(() => {
     if (selectedEdgeId) {
@@ -2313,6 +2416,56 @@ onZoom100={() => {
               Open Device Library
             </button>
           }
+          projectDevices={
+  projectDevices.length === 0 ? (
+    <span className="explorer-empty">
+      Nog geen projectapparaten
+    </span>
+  ) : (
+    <>
+      {[...projectDevices]
+        .sort((a, b) =>
+          a.sysname.localeCompare(b.sysname),
+        )
+        .map((device) => (
+          <button
+            key={device.sysname}
+            type="button"
+            className="explorer-item explorer-device-item"
+            draggable
+            title={`${device.sysname} · ${device.type_ref}`}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = 'copy'
+
+              event.dataTransfer.setData(
+                'application/x-av-project-device',
+                device.sysname,
+              )
+
+              /*
+               * text/plain als fallback voor browsers /
+               * debugging van drag-and-drop.
+               */
+              event.dataTransfer.setData(
+                'text/plain',
+                device.sysname,
+              )
+
+              setStatus(
+                `${device.sysname} wordt naar sheet ${activeSheet.name} gesleept.`,
+              )
+            }}
+          >
+            {device.sysname}
+          </button>
+        ))}
+    </>
+  )
+}
+
+
+
+
 
          sheets={
   <>
@@ -2377,6 +2530,125 @@ onZoom100={() => {
         onInit={setFlowInstance}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onDragOver={(event) => {
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+}}
+
+onDrop={(event) => {
+  event.preventDefault()
+
+  if (!flowInstance) {
+    setStatus('Het canvas is nog niet gereed.')
+    return
+  }
+
+  const sysname =
+    event.dataTransfer.getData(
+      'application/x-av-project-device',
+    ) ||
+    event.dataTransfer.getData('text/plain')
+
+  if (!sysname) {
+    return
+  }
+
+  const device = projectDevices.find(
+    (item) => item.sysname === sysname,
+  )
+
+  if (!device) {
+    setStatus(
+      `Projectapparaat ${sysname} kon niet worden gevonden.`,
+    )
+    return
+  }
+
+  /*
+   * Eén device mag maar één keer op dezelfde sheet staan.
+   */
+  const alreadyPlaced = nodes.some(
+    (node) =>
+      node.type === 'device' &&
+      node.id === device.sysname,
+  )
+
+  if (alreadyPlaced) {
+    setStatus(
+      `${device.sysname} staat al op sheet ${activeSheet.name}.`,
+    )
+    return
+  }
+
+  const deviceType = libraryTypes.find(
+    (type) =>
+      `${type.mfg}/${type.model}` === device.type_ref,
+  )
+
+  if (!deviceType) {
+    setStatus(
+      `Apparaattype ${device.type_ref} kon niet worden gevonden.`,
+    )
+    return
+  }
+
+  const ports = getPortsForSheet(
+    deviceType,
+    activeSheet,
+  )
+
+  if (
+    activeSheet.signals !== null &&
+    ports.length === 0
+  ) {
+    setStatus(
+      `${device.sysname} heeft geen relevante aansluitingen voor sheet ${activeSheet.name}.`,
+    )
+    return
+  }
+
+  /*
+   * Exacte positie waar de gebruiker het device loslaat.
+   */
+  const position =
+    flowInstance.screenToFlowPosition({
+      x: event.clientX,
+      y: event.clientY,
+    })
+
+  const node: DeviceNode = {
+    id: device.sysname,
+    type: 'device',
+    dragHandle: '.drag-handle',
+    position,
+    data: {
+      sysname: device.sysname,
+      manufacturer: deviceType.mfg,
+      model: deviceType.model,
+      description: deviceType.short_desc,
+      location: device.location,
+      rack: device.rack,
+      ports,
+      selectedSource,
+      onPortClick,
+    },
+  }
+
+  setNodes((current) => [
+    ...current,
+    node,
+  ])
+
+  setSelectedNodeId(device.sysname)
+  setSelectedEdgeId(null)
+
+  setStatus(
+    `${device.sysname} op sheet ${activeSheet.name} geplaatst.`,
+  )
+}}
+
+
+
         onViewportChange={(viewport) => {
           setViewportZoom(viewport.zoom)
       }}
@@ -2443,6 +2715,16 @@ onZoom100={() => {
       <DeviceLibrary
         types={libraryTypes}
         devices={projectDevices}
+
+          activeSheetName={activeSheet.name}
+  activeSheetSignals={activeSheet.signals}
+
+  placedDeviceIds={nodes
+    .filter((node) => node.type === 'device')
+    .map((node) => node.id)}
+
+
+
         onCreateType={createDeviceType}
         onUpdateType={updateDeviceType}
         onDeleteType={deleteDeviceType}

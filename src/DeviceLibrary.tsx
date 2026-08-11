@@ -15,9 +15,16 @@ type NewPort = {
   connector: string
 }
 
+
+
 type DeviceLibraryProps = {
   types: DeviceType[]
   devices: Device[]
+
+  activeSheetName: string
+  activeSheetSignals: Signal[] | null
+  placedDeviceIds: string[]
+
   onCreateType: (deviceType: DeviceType) => void
   onUpdateType: (
     originalTypeRef: string,
@@ -25,10 +32,12 @@ type DeviceLibraryProps = {
   ) => void
   onDeleteType: (typeRef: string) => void
   onPlaceDevice: (device: Device) => void
+
   onImportJson: (
     importedTypes: DeviceType[],
     importedDevices: Device[],
   ) => void
+
   signalTypes: SignalTypeDefinition[]
   connectors: string[]
 }
@@ -47,6 +56,9 @@ function typeRef(deviceType: DeviceType) {
 export function DeviceLibrary({
   types,
   devices,
+  activeSheetName,
+  activeSheetSignals,
+  placedDeviceIds,
   onCreateType,
   onUpdateType,
   onDeleteType,
@@ -580,6 +592,29 @@ export function DeviceLibrary({
     setSelectedTypeRef(reference)
   }
 
+  function deviceTypeFor(device: Device) {
+  return types.find(
+    (deviceType) =>
+      typeRef(deviceType) === device.type_ref,
+  )
+}
+
+function relevantPortCount(device: Device) {
+  const deviceType = deviceTypeFor(device)
+
+  if (!deviceType) return 0
+
+  if (activeSheetSignals === null) {
+    return deviceType.ports.length
+  }
+
+  return deviceType.ports.filter((port) =>
+    activeSheetSignals.includes(port.signal),
+  ).length
+}
+
+
+
   function placeDevice() {
     const cleanSysname = sysname.trim()
 
@@ -879,7 +914,7 @@ export function DeviceLibrary({
       </section>
 
       <section className="library-section">
-        <h3>Apparaat plaatsen</h3>
+        <h3>Nieuw projectapparaat</h3>
 
         <label>
           Type
@@ -931,9 +966,94 @@ export function DeviceLibrary({
           className="primary-library-button"
           onClick={placeDevice}
         >
-          Op canvas plaatsen
+          Nieuw apparaat plaatsen
         </button>
       </section>
+
+      <section className="library-section">
+  <h3>
+    Projectapparaten ({devices.length})
+  </h3>
+
+  <small>
+    Bestaande apparaten plaatsen op sheet{' '}
+    <strong>{activeSheetName}</strong>
+  </small>
+
+  <div className="type-list">
+    {devices.length === 0 ? (
+      <div className="type-list-item">
+        <span>
+          Nog geen apparaten in dit project.
+        </span>
+      </div>
+    ) : (
+      devices.map((device) => {
+        const alreadyPlaced =
+          placedDeviceIds.includes(device.sysname)
+
+        const portCount =
+          relevantPortCount(device)
+
+        const hasRelevantPorts =
+          activeSheetSignals === null ||
+          portCount > 0
+
+        return (
+          <div
+            key={device.sysname}
+            className="type-list-item"
+          >
+            <div>
+              <strong>{device.sysname}</strong>
+
+              <small>
+                {device.type_ref}
+                {' · '}
+
+                {activeSheetSignals === null
+                  ? `${portCount} poorten`
+                  : `${portCount} relevante poorten`}
+              </small>
+
+              <small>
+                {device.location}
+                {' · '}
+                {device.rack}
+              </small>
+            </div>
+
+            <div className="type-list-actions">
+              <button
+                type="button"
+                disabled={
+                  alreadyPlaced ||
+                  !hasRelevantPorts
+                }
+                title={
+                  alreadyPlaced
+                    ? `Staat al op sheet ${activeSheetName}`
+                    : !hasRelevantPorts
+                      ? `Geen relevante poorten voor sheet ${activeSheetName}`
+                      : `Plaats op sheet ${activeSheetName}`
+                }
+                onClick={() =>
+                  onPlaceDevice(device)
+                }
+              >
+                {alreadyPlaced
+                  ? 'Geplaatst'
+                  : !hasRelevantPorts
+                    ? 'Niet relevant'
+                    : 'Plaats'}
+              </button>
+            </div>
+          </div>
+        )
+      })
+    )}
+  </div>
+</section>
 
       <section className="library-section">
         <h3>Apparaattypes ({filteredTypes.length})</h3>
