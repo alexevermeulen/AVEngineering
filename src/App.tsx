@@ -23,7 +23,11 @@ import {
   GraphicURouteNodeComponent,
   type GraphicURouteNode,
 } from './GraphicURouteNode'
-import { REACT_FLOW_CONFIG } from './canvas/ReactFlowConfig'
+import {
+  REACT_FLOW_CONFIG,
+  REACT_FLOW_FIT_OPTIONS,
+} from './canvas/ReactFlowConfig'
+
 import { ReactFlowViewport } from './canvas/ReactFlowViewport'
 import { CanvasView } from './canvas/CanvasView'
 import { DeviceLibrary } from './DeviceLibrary'
@@ -449,6 +453,9 @@ function App() {
   const [routeSignal, setRouteSignal] = useState<Signal>('DGV')
   const [flowInstance, setFlowInstance] =
     useState<ReactFlowInstance<AppNode, CableEdge> | null>(null)
+  const [viewportZoom, setViewportZoom] = useState(1)
+
+
   const openProjectInputRef = useRef<HTMLInputElement | null>(null)
 
   const undoStackRef = useRef<HistorySnapshot[]>([])
@@ -2095,6 +2102,7 @@ function App() {
   toolMode={toolMode}
   routeSignal={routeSignal}
   routeSignals={['DGV', 'DAT', 'AUD', 'CTRL', 'PWR']}
+  currentZoom={viewportZoom}
   canUndo={canUndo}
   canRedo={canRedo}
   canEditDevice={Boolean(
@@ -2146,7 +2154,7 @@ onZoomFit={() => {
   if (!flowInstance) return
 
   void flowInstance.fitView({
-    padding: 0.1,
+    ...REACT_FLOW_FIT_OPTIONS,
     duration: 250,
   })
 }}
@@ -2259,6 +2267,11 @@ onZoom100={() => {
         onInit={setFlowInstance}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onViewportChange={(viewport) => {
+          setViewportZoom(viewport.zoom)
+      }}
+
+
         onPaneClick={(event) => {
           setSelectedEdgeId(null)
           setSelectedNodeId(null)

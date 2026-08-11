@@ -2,10 +2,16 @@ import type { ReactNode } from 'react'
 
 type DrawingSheetProps = {
   children: ReactNode
+  sheetName?: string
+  drawingTitle?: string
+  revision?: string
 }
 
 export function DrawingSheet({
   children,
+  sheetName = 'Main',
+  drawingTitle = 'Engineering Drawing',
+  revision = '01',
 }: DrawingSheetProps) {
   return (
     <div className="drawing-workbench">
@@ -18,17 +24,17 @@ export function DrawingSheet({
           <footer className="drawing-title-block">
             <div>
               <strong>AV Engineering Platform</strong>
-              <span>Engineering Drawing</span>
+              <span>{drawingTitle}</span>
             </div>
 
             <div>
               <span>Sheet</span>
-              <strong>Main</strong>
+              <strong>{sheetName}</strong>
             </div>
 
             <div>
               <span>Revision</span>
-              <strong>01</strong>
+              <strong>{revision}</strong>
             </div>
           </footer>
         </div>

@@ -2205,3 +2205,12 @@ button {
   border-color: #2563eb;
   background: #eff6ff;
 }
+.toolbar-zoom-value {
+  min-width: 38px;
+  padding: 0 4px;
+
+  color: #475569;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+}

@@ -17,6 +17,8 @@ type ToolbarProps = {
   canDelete: boolean
   hasSelectedEdge: boolean
 
+  currentZoom: number
+
   openProjectInputRef: RefObject<HTMLInputElement | null>
 
   signalName: (signal: Signal) => string
@@ -58,6 +60,7 @@ export function Toolbar({
   canEditDevice,
   canDelete,
   hasSelectedEdge,
+  currentZoom,
   openProjectInputRef,
   signalName,
   onNewProject,
@@ -218,21 +221,53 @@ export function Toolbar({
 <div className="toolbar-separator" />
 
 <div className="toolbar-group">
-  <button type="button" onClick={onZoomFit}>
-    Fit
-  </button>
-
-  <button type="button" onClick={onZoom50}>
+  <button
+    type="button"
+    className={
+      Math.abs(currentZoom - 0.5) < 0.005
+        ? 'active-tool'
+        : ''
+    }
+    onClick={onZoom50}
+  >
     50%
   </button>
 
-  <button type="button" onClick={onZoom75}>
+  <button
+    type="button"
+    className={
+      Math.abs(currentZoom - 0.75) < 0.005
+        ? 'active-tool'
+        : ''
+    }
+    onClick={onZoom75}
+  >
     75%
   </button>
 
-  <button type="button" onClick={onZoom100}>
+  <button
+    type="button"
+    className={
+      Math.abs(currentZoom - 1) < 0.005
+        ? 'active-tool'
+        : ''
+    }
+    onClick={onZoom100}
+  >
     100%
   </button>
+
+  <button
+    type="button"
+    onClick={onZoomFit}
+    title="Tekening passend in beeld"
+  >
+    Fit
+  </button>
+
+  <span className="toolbar-zoom-value">
+    {Math.round(currentZoom * 100)}%
+  </span>
 </div>
 
 
