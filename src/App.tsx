@@ -580,6 +580,9 @@ const activeSheet = useMemo(
   const [edges, setEdges, onEdgesChange] =
     useEdgesState<CableEdge>([])
 
+  const sheetContentsRef = useRef<
+  Record<string, HistorySnapshot>
+>({})  
 
   const updateHistoryButtons = useCallback(() => {
     setCanUndo(undoStackRef.current.length > 0)
@@ -598,6 +601,76 @@ const activeSheet = useMemo(
     },
     [updateHistoryButtons],
   )
+  const switchSheet = useCallback(
+  (
+    nextSheetId: string,
+    nextSheetName: string,
+  ) => {
+    if (nextSheetId === activeSheetId) {
+      setMainView('canvas')
+      return
+    }
+
+    if (historyTimerRef.current !== null) {
+      window.clearTimeout(historyTimerRef.current)
+      historyTimerRef.current = null
+    }
+
+    // Huidige sheet bewaren
+    sheetContentsRef.current[activeSheetId] =
+      cloneHistorySnapshot(nodes, edges)
+
+    // Nieuwe sheet ophalen
+    const savedContent =
+      sheetContentsRef.current[nextSheetId]
+
+    const nextContent: HistorySnapshot =
+      savedContent
+        ? cloneHistorySnapshot(
+            savedContent.nodes,
+            savedContent.edges,
+          )
+        : {
+            nodes: [],
+            edges: [],
+          }
+
+    applyingHistoryRef.current = true
+
+    setSelectedSource(null)
+    setSelectedEdgeId(null)
+    setSelectedNodeId(null)
+    setEditingDeviceId(null)
+    setToolMode('select')
+
+    setNodes(nextContent.nodes)
+    setEdges(nextContent.edges)
+
+    setActiveSheetId(nextSheetId)
+    setMainView('canvas')
+
+    resetHistory(
+      nextContent.nodes,
+      nextContent.edges,
+    )
+
+    window.requestAnimationFrame(() => {
+      applyingHistoryRef.current = false
+    })
+
+    setStatus(`Sheet ${nextSheetName} geopend.`)
+  },
+  [
+    activeSheetId,
+    edges,
+    nodes,
+    resetHistory,
+    setEdges,
+    setNodes,
+  ],
+)
+
+
 
   /*
    * Wijzigingen worden pas na een korte rustige periode als één handeling
@@ -897,17 +970,21 @@ const activeSheet = useMemo(
     [setNodes],
   )
 
-  useEffect(() => {
-    setNodes((currentNodes) => {
-      const routeNodes = currentNodes
-        .filter((node) => node.type === 'graphic-u-route')
-        .map((node) => ({
-          ...node,
-          data: {
-            ...(node.data as GraphicURouteNodeData),
-            onChangeGeometry: changeRouteGeometry,
-          },
-        }))
+useEffect(() => {
+  if (activeSheetId !== MAIN_SHEET.id) {
+    return
+  }
+
+  setNodes((currentNodes) => {
+    const routeNodes = currentNodes
+      .filter((node) => node.type === 'graphic-u-route')
+      .map((node) => ({
+        ...node,
+        data: {
+          ...(node.data as GraphicURouteNodeData),
+          onChangeGeometry: changeRouteGeometry,
+        },
+      }))
 
       const mergedDeviceNodes = baseNodes
         .filter((baseNode) => !deletedDeviceIds.includes(baseNode.id))
@@ -941,14 +1018,15 @@ const activeSheet = useMemo(
 
       return [...mergedDeviceNodes, ...routeNodes]
     })
-  }, [
-    baseNodes,
-    changeRouteGeometry,
-    deletedDeviceIds,
-    onPortClick,
-    selectedSource,
-    setNodes,
-  ])
+}, [
+  activeSheetId,
+  baseNodes,
+  changeRouteGeometry,
+  deletedDeviceIds,
+  onPortClick,
+  selectedSource,
+  setNodes,
+])
 
   const setSelectedCableMode = useCallback(
     (displayMode: CableDisplayMode) => {
@@ -2247,11 +2325,9 @@ onZoom100={() => {
             ? 'explorer-item explorer-item-selected'
             : 'explorer-item'
         }
-        onClick={() => {
-          setActiveSheetId(sheet.id)
-          setMainView('canvas')
-          setStatus(`Sheet ${sheet.name} geopend.`)
-        }}
+        onClick={() =>
+          switchSheet(sheet.id, sheet.name)
+        }
       >
         {sheet.name}
       </button>
