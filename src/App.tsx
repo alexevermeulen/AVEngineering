@@ -734,14 +734,20 @@ const activeSheet = useMemo(
 
       setNodes(snapshot.nodes)
       setEdges(snapshot.edges)
-      setDeletedDeviceIds(
-        baseNodes
-          .filter(
-            (baseNode) =>
-              !snapshot.nodes.some((node) => node.id === baseNode.id),
-          )
-          .map((node) => node.id),
+      
+      if (activeSheetId === MAIN_SHEET.id) {
+  setDeletedDeviceIds(
+    baseNodes
+      .filter(
+        (baseNode) =>
+          !snapshot.nodes.some(
+            (node) => node.id === baseNode.id,
+          ),
       )
+      .map((node) => node.id),
+  )
+}
+      
       setSelectedSource(null)
       setSelectedEdgeId(null)
       setSelectedNodeId(null)
@@ -756,7 +762,13 @@ const activeSheet = useMemo(
         applyingHistoryRef.current = false
       })
     },
-    [baseNodes, setEdges, setNodes],
+    [
+       activeSheetId,
+  baseNodes,
+  setEdges,
+  setNodes, 
+
+    ],
   )
 
   const undo = useCallback(() => {
@@ -1476,20 +1488,29 @@ const placeLibraryDevice = useCallback(
               edge.target !== selectedNodeId,
           ),
         )
-        setDeletedDeviceIds((current) =>
-          current.includes(selectedNodeId)
-            ? current
-            : [...current, selectedNodeId],
-        )
-        setProjectDevices((current) =>
-          current.filter((device) => device.sysname !== selectedNodeId),
-        )
-        setNodes((current) =>
-          current.filter((item) => item.id !== selectedNodeId),
-        )
-        setSelectedNodeId(null)
-        setStatus(`Apparaat ${node.id} verwijderd.`)
-        return
+
+        if (activeSheetId === MAIN_SHEET.id) {
+  setDeletedDeviceIds((current) =>
+    current.includes(selectedNodeId)
+      ? current
+      : [...current, selectedNodeId],
+  )
+}
+
+setNodes((current) =>
+  current.filter(
+    (item) => item.id !== selectedNodeId,
+  ),
+)
+
+setSelectedNodeId(null)
+
+setStatus(
+  `${node.id} van sheet ${activeSheet.name} verwijderd.`,
+)
+
+return
+      
       }
 
       if (node.type === 'graphic-u-route') {
@@ -1501,6 +1522,8 @@ const placeLibraryDevice = useCallback(
       }
     }
   }, [
+      activeSheet,
+  activeSheetId,
     edges,
     nodes,
     selectedEdgeId,
