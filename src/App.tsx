@@ -26,6 +26,7 @@ import {
 import {
   REACT_FLOW_CONFIG,
   REACT_FLOW_FIT_OPTIONS,
+  REACT_FLOW_SNAP_GRID,
 } from './canvas/ReactFlowConfig'
 
 import {
@@ -631,15 +632,23 @@ const activeSheet = useMemo(
       sheetContentsRef.current[nextSheetId]
 
     const nextContent: HistorySnapshot =
-      savedContent
-        ? cloneHistorySnapshot(
-            savedContent.nodes,
-            savedContent.edges,
-          )
-        : {
-            nodes: [],
-            edges: [],
-          }
+  savedContent
+    ? {
+        ...cloneHistorySnapshot(
+          savedContent.nodes,
+          savedContent.edges,
+        ),
+        nodes: savedContent.nodes.map((node) => ({
+          ...node,
+          position: snapToEngineeringGrid(
+            node.position,
+          ),
+        })) as AppNode[],
+      }
+    : {
+        nodes: [],
+        edges: [],
+      }
 
     applyingHistoryRef.current = true
 
@@ -1013,25 +1022,31 @@ useEffect(() => {
 
         if (!existingNode) {
           return {
-            ...baseNode,
-            data: {
-              ...baseNode.data,
-              selectedSource,
-              onPortClick,
-            },
-          }
+  ...baseNode,
+  position: snapToEngineeringGrid(
+    baseNode.position,
+  ),
+  data: {
+    ...baseNode.data,
+    selectedSource,
+    onPortClick,
+  },
+}
         }
 
         return {
-          ...existingNode,
-          type: baseNode.type,
-          dragHandle: baseNode.dragHandle,
-          data: {
-            ...baseNode.data,
-            selectedSource,
-            onPortClick,
-          },
-        }
+  ...existingNode,
+  type: baseNode.type,
+  dragHandle: baseNode.dragHandle,
+  position: snapToEngineeringGrid(
+    existingNode.position,
+  ),
+  data: {
+    ...baseNode.data,
+    selectedSource,
+    onPortClick,
+  },
+}
       })
 
       return [...mergedDeviceNodes, ...routeNodes]
@@ -1306,6 +1321,15 @@ useEffect(() => {
     },
     [projectDevices],
   )
+
+const snapToEngineeringGrid = (
+  position: { x: number; y: number },
+) => ({
+  x: Math.round(position.x / 20) * 20,
+  y: Math.round(position.y / 20) * 20,
+})
+
+
 
 const placeLibraryDevice = useCallback(
   (
@@ -2487,11 +2511,17 @@ onZoom100={() => {
   if (!flowInstance) {
     setStatus('Het canvas is nog niet gereed.')
   } else {
-    const position =
-      flowInstance.screenToFlowPosition({
-        x: pointerEvent.clientX,
-        y: pointerEvent.clientY,
-      })
+   const position =
+  flowInstance.screenToFlowPosition(
+    {
+      x: pointerEvent.clientX,
+      y: pointerEvent.clientY,
+    },
+    {
+      snapToGrid: true,
+      snapGrid: REACT_FLOW_SNAP_GRID,
+    },
+  )
 
     placeLibraryDevice(
       device,
