@@ -2276,3 +2276,12 @@ button {
 .explorer-device-item:active {
   cursor: grabbing;
 }
+.project-device-pointer-drag,
+.project-device-pointer-drag * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.explorer-device-item {
+  cursor: grab;
+}

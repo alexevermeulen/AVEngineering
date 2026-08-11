@@ -1296,7 +1296,12 @@ useEffect(() => {
   )
 
 const placeLibraryDevice = useCallback(
-  (device: Device) => {
+  (
+    device: Device,
+    positionOverride?: { x: number; y: number },
+  ) => {
+
+
     if (!flowInstance) {
       setStatus('Het canvas is nog niet gereed.')
       return
@@ -1351,10 +1356,11 @@ const placeLibraryDevice = useCallback(
     }
 
     const position =
-      flowInstance.screenToFlowPosition({
-        x: window.innerWidth * 0.62,
-        y: window.innerHeight * 0.5,
-      })
+  positionOverride ??
+  flowInstance.screenToFlowPosition({
+    x: window.innerWidth * 0.62,
+    y: window.innerHeight * 0.5,
+  })
 
     /*
      * Alleen toevoegen aan de projectdatabase als dit
@@ -2428,36 +2434,86 @@ onZoom100={() => {
           a.sysname.localeCompare(b.sysname),
         )
         .map((device) => (
-          <button
-            key={device.sysname}
-            type="button"
-            className="explorer-item explorer-device-item"
-            draggable
-            title={`${device.sysname} · ${device.type_ref}`}
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = 'copy'
+<button
+  key={device.sysname}
+  type="button"
+  className="explorer-item explorer-device-item"
+  title={`${device.sysname} · ${device.type_ref}`}
+  onPointerDown={(event) => {
+    event.preventDefault()
 
-              event.dataTransfer.setData(
-                'application/x-av-project-device',
-                device.sysname,
-              )
+    document.body.classList.add(
+      'project-device-pointer-drag',
+    )
 
-              /*
-               * text/plain als fallback voor browsers /
-               * debugging van drag-and-drop.
-               */
-              event.dataTransfer.setData(
-                'text/plain',
-                device.sysname,
-              )
+    setStatus(
+      `${device.sysname} wordt naar sheet ${activeSheet.name} gesleept.`,
+    )
 
-              setStatus(
-                `${device.sysname} wordt naar sheet ${activeSheet.name} gesleept.`,
-              )
-            }}
-          >
-            {device.sysname}
-          </button>
+    const finishDrag = (pointerEvent: PointerEvent) => {
+      const element = document.elementFromPoint(
+        pointerEvent.clientX,
+        pointerEvent.clientY,
+      )
+
+      const droppedOnCanvas =
+        element instanceof Element &&
+        element.closest('.flow-area') !== null
+
+      if (droppedOnCanvas) {
+  if (!flowInstance) {
+    setStatus('Het canvas is nog niet gereed.')
+  } else {
+    const position =
+      flowInstance.screenToFlowPosition({
+        x: pointerEvent.clientX,
+        y: pointerEvent.clientY,
+      })
+
+    placeLibraryDevice(
+      device,
+      position,
+    )
+  }
+} else {
+
+        setStatus(
+          `${device.sysname} niet op het canvas losgelaten.`,
+        )
+      }
+
+      document.body.classList.remove(
+        'project-device-pointer-drag',
+      )
+
+      window.removeEventListener(
+        'pointerup',
+        finishDrag,
+        true,
+      )
+
+      window.removeEventListener(
+        'pointercancel',
+        finishDrag,
+        true,
+      )
+    }
+
+    window.addEventListener(
+      'pointerup',
+      finishDrag,
+      true,
+    )
+
+    window.addEventListener(
+      'pointercancel',
+      finishDrag,
+      true,
+    )
+  }}
+>
+  {device.sysname}
+</button>
         ))}
     </>
   )
@@ -2520,196 +2576,81 @@ onZoom100={() => {
         
 <Workspace
   activeView={mainView}
-  canvas={
-    <CanvasView sheet={activeSheet}>
-      <ReactFlow<AppNode, CableEdge>
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onInit={setFlowInstance}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onDragOver={(event) => {
-  event.preventDefault()
-  event.dataTransfer.dropEffect = 'copy'
-}}
-
-onDrop={(event) => {
-  event.preventDefault()
-
-  if (!flowInstance) {
-    setStatus('Het canvas is nog niet gereed.')
-    return
-  }
-
-  const sysname =
-    event.dataTransfer.getData(
-      'application/x-av-project-device',
-    ) ||
-    event.dataTransfer.getData('text/plain')
-
-  if (!sysname) {
-    return
-  }
-
-  const device = projectDevices.find(
-    (item) => item.sysname === sysname,
-  )
-
-  if (!device) {
-    setStatus(
-      `Projectapparaat ${sysname} kon niet worden gevonden.`,
-    )
-    return
-  }
-
-  /*
-   * Eén device mag maar één keer op dezelfde sheet staan.
-   */
-  const alreadyPlaced = nodes.some(
-    (node) =>
-      node.type === 'device' &&
-      node.id === device.sysname,
-  )
-
-  if (alreadyPlaced) {
-    setStatus(
-      `${device.sysname} staat al op sheet ${activeSheet.name}.`,
-    )
-    return
-  }
-
-  const deviceType = libraryTypes.find(
-    (type) =>
-      `${type.mfg}/${type.model}` === device.type_ref,
-  )
-
-  if (!deviceType) {
-    setStatus(
-      `Apparaattype ${device.type_ref} kon niet worden gevonden.`,
-    )
-    return
-  }
-
-  const ports = getPortsForSheet(
-    deviceType,
-    activeSheet,
-  )
-
-  if (
-    activeSheet.signals !== null &&
-    ports.length === 0
-  ) {
-    setStatus(
-      `${device.sysname} heeft geen relevante aansluitingen voor sheet ${activeSheet.name}.`,
-    )
-    return
-  }
-
-  /*
-   * Exacte positie waar de gebruiker het device loslaat.
-   */
-  const position =
-    flowInstance.screenToFlowPosition({
-      x: event.clientX,
-      y: event.clientY,
-    })
-
-  const node: DeviceNode = {
-    id: device.sysname,
-    type: 'device',
-    dragHandle: '.drag-handle',
-    position,
-    data: {
-      sysname: device.sysname,
-      manufacturer: deviceType.mfg,
-      model: deviceType.model,
-      description: deviceType.short_desc,
-      location: device.location,
-      rack: device.rack,
-      ports,
-      selectedSource,
-      onPortClick,
-    },
-  }
-
-  setNodes((current) => [
-    ...current,
-    node,
-  ])
-
-  setSelectedNodeId(device.sysname)
-  setSelectedEdgeId(null)
-
-  setStatus(
-    `${device.sysname} op sheet ${activeSheet.name} geplaatst.`,
-  )
-}}
-
-
-
-        onViewportChange={(viewport) => {
-          setViewportZoom(viewport.zoom)
-      }}
-
-
-        onPaneClick={(event) => {
-          setSelectedEdgeId(null)
-          setSelectedNodeId(null)
-          placeGraphicRoute(event)
-        }}
-        onNodeClick={(_, node) => {
-          setSelectedNodeId(node.id)
-          setSelectedEdgeId(null)
-          setStatus(
-            node.type === 'device'
-              ? `Apparaat ${node.id} geselecteerd.`
-              : 'U-lijn geselecteerd.',
-          )
-        }}
-        onNodeDoubleClick={(_, node) => {
-          if (node.type !== 'device') return
-
-          setEditingDeviceId(node.id)
-          setSelectedNodeId(node.id)
-          setSelectedEdgeId(null)
-          setStatus(`Apparaat ${node.id} wordt bewerkt.`)
-        }}
-        onEdgeClick={(_, edge) => {
-          setSelectedEdgeId(edge.id)
-          setSelectedNodeId(null)
-          setStatus(
-            `Kabel ${
-              edge.data?.cableNumber ?? edge.id
-            } geselecteerd.`,
-          )
-        }}
-        onEdgeDoubleClick={(_, edge) => {
-          setSelectedEdgeId(edge.id)
-          setEdges((current) =>
-            current.map((item) =>
-              item.id === edge.id && item.data
-                ? {
-                    ...item,
-                    data: {
-                      ...item.data,
-                      displayMode: nextDisplayMode(
-                        item.data.displayMode,
-                      ),
-                    },
-                  }
-                : item,
-            ),
-          )
-        }}
-        {...REACT_FLOW_CONFIG}
-      >
-        <ReactFlowViewport />
-      </ReactFlow>
   
-    </CanvasView>
-  }
+  canvas={
+<CanvasView sheet={activeSheet}>
+
+
+
+
+    <ReactFlow<AppNode, CableEdge>
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
+      onInit={setFlowInstance}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      onViewportChange={(viewport) => {
+        setViewportZoom(viewport.zoom)
+      }}
+      onPaneClick={(event) => {
+        setSelectedEdgeId(null)
+        setSelectedNodeId(null)
+        placeGraphicRoute(event)
+      }}
+      onNodeClick={(_, node) => {
+        setSelectedNodeId(node.id)
+        setSelectedEdgeId(null)
+        setStatus(
+          node.type === 'device'
+            ? `Apparaat ${node.id} geselecteerd.`
+            : 'U-lijn geselecteerd.',
+        )
+      }}
+      onNodeDoubleClick={(_, node) => {
+        if (node.type !== 'device') return
+
+        setEditingDeviceId(node.id)
+        setSelectedNodeId(node.id)
+        setSelectedEdgeId(null)
+        setStatus(
+          `Apparaat ${node.id} wordt bewerkt.`,
+        )
+      }}
+      onEdgeClick={(_, edge) => {
+        setSelectedEdgeId(edge.id)
+        setSelectedNodeId(null)
+        setStatus(
+          `Kabel ${
+            edge.data?.cableNumber ?? edge.id
+          } geselecteerd.`,
+        )
+      }}
+      onEdgeDoubleClick={(_, edge) => {
+        setSelectedEdgeId(edge.id)
+        setEdges((current) =>
+          current.map((item) =>
+            item.id === edge.id && item.data
+              ? {
+                  ...item,
+                  data: {
+                    ...item.data,
+                    displayMode: nextDisplayMode(
+                      item.data.displayMode,
+                    ),
+                  },
+                }
+              : item,
+          ),
+        )
+      }}
+      {...REACT_FLOW_CONFIG}
+    >
+      <ReactFlowViewport />
+    </ReactFlow>
+  </CanvasView>
+}
   deviceLibrary={
     <div className="workspace-view workspace-library-view">
       <DeviceLibrary
