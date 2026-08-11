@@ -485,8 +485,24 @@ const activeSheet = useMemo(
   const historyTimerRef = useRef<number | null>(null)
   const applyingHistoryRef = useRef(false)
 
+
+
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
+
+const onPortClickRef = useRef<
+  (endpoint: Endpoint) => void
+>(() => undefined)
+
+const handlePortClick = useCallback(
+  (endpoint: Endpoint) => {
+    onPortClickRef.current(endpoint)
+  },
+  [],
+)
+
+
+
 
   const [status, setStatus] = useState(
     'Klik eerst op een uitgang en daarna op een ingang.',
@@ -561,7 +577,7 @@ const activeSheet = useMemo(
         rack: device.rack,
         ports: getPortsForSheet(deviceType, activeSheet),
         selectedSource: null,
-        onPortClick: () => undefined,
+        onPortClick: handlePortClick,
       }
 
       return [{
@@ -577,6 +593,7 @@ const activeSheet = useMemo(
     })
  }, [
   activeSheet,
+  handlePortClick,
   libraryTypes,
   projectData,
   projectDevices,
@@ -828,6 +845,40 @@ const activeSheet = useMemo(
     updateHistoryButtons,
   ])
 
+  const getProjectEdges = useCallback(() => {
+  const storedEdges = Object.entries(
+    sheetContentsRef.current,
+  )
+    .filter(
+      ([sheetId]) =>
+        sheetId !== activeSheetId,
+    )
+    .flatMap(
+      ([sheetId, snapshot]) =>
+        snapshot.edges.map((edge) => ({
+          sheetId,
+          edge,
+        })),
+    )
+
+  const currentEdges = edges.map((edge) => ({
+    sheetId: activeSheetId,
+    edge,
+  }))
+
+  return [
+    ...storedEdges,
+    ...currentEdges,
+  ]
+}, [
+  activeSheetId,
+  edges,
+])
+
+
+
+
+
   const createCable = useCallback(
     (source: Endpoint, target: Endpoint) => {
       if (!portCanBeSource(source.port)) {
@@ -852,16 +903,104 @@ const activeSheet = useMemo(
         return
       }
 
-      const inputOccupied = edges.some(
-        (edge) =>
-          edge.target === target.deviceId &&
-          edge.targetHandle === `port:${target.port.label}`,
-      )
+      const projectEdges = getProjectEdges()
 
-      if (inputOccupied) {
-        setStatus(`${target.deviceId}/${target.port.label} is al aangesloten.`)
-        return
-      }
+const existingConnection =
+  projectEdges.find(({ edge }) => {
+    const forwardMatch =
+      edge.source === source.deviceId &&
+      edge.sourceHandle ===
+        `port:${source.port.label}` &&
+      edge.target === target.deviceId &&
+      edge.targetHandle ===
+        `port:${target.port.label}`
+
+    /*
+     * Ook omgekeerd controleren.
+     * Vooral belangrijk voor bidirectionele
+     * netwerkpoorten.
+     */
+    const reverseMatch =
+      edge.source === target.deviceId &&
+      edge.sourceHandle ===
+        `port:${target.port.label}` &&
+      edge.target === source.deviceId &&
+      edge.targetHandle ===
+        `port:${source.port.label}`
+
+    return forwardMatch || reverseMatch
+  })
+
+if (existingConnection) {
+  const sheetName =
+    sheets.find(
+      (sheet) =>
+        sheet.id === existingConnection.sheetId,
+    )?.name ??
+    existingConnection.sheetId
+
+  setSelectedSource(null)
+
+  setStatus(
+    `Verbinding bestaat al als ${
+      existingConnection.edge.data?.cableNumber ??
+      existingConnection.edge.id
+    } op sheet ${sheetName}.`,
+  )
+
+  return
+}
+
+
+const sourceConnection = projectEdges.find(
+  ({ edge }) =>
+    (
+      edge.source === source.deviceId &&
+      edge.sourceHandle === `port:${source.port.label}`
+    ) ||
+    (
+      edge.target === source.deviceId &&
+      edge.targetHandle === `port:${source.port.label}`
+    ),
+)
+
+if (sourceConnection) {
+  setSelectedSource(null)
+
+  setStatus(
+    `${source.deviceId}/${source.port.label} is al aangesloten met kabel ${
+      sourceConnection.edge.data?.cableNumber ??
+      sourceConnection.edge.id
+    }.`,
+  )
+
+  return
+}
+
+const targetConnection = projectEdges.find(
+  ({ edge }) =>
+    (
+      edge.target === target.deviceId &&
+      edge.targetHandle === `port:${target.port.label}`
+    ) ||
+    (
+      edge.source === target.deviceId &&
+      edge.sourceHandle === `port:${target.port.label}`
+    ),
+)
+
+if (targetConnection) {
+  setSelectedSource(null)
+
+  setStatus(
+    `${target.deviceId}/${target.port.label} is al aangesloten met kabel ${
+      targetConnection.edge.data?.cableNumber ??
+      targetConnection.edge.id
+    }.`,
+  )
+
+  return
+}
 
       const generatedCableNumber = generateCableNumber(
         {
@@ -869,9 +1008,12 @@ const activeSheet = useMemo(
           sourcePort: source.port,
           targetDevice: target.deviceId,
           targetPort: target.port,
-          existingNumbers: edges.flatMap((edge) =>
-            edge.data?.cableNumber ? [edge.data.cableNumber] : [],
-          ),
+          existingNumbers: projectEdges.flatMap(
+  ({ edge }) =>
+    edge.data?.cableNumber
+      ? [edge.data.cableNumber]
+      : [],
+),
         },
         engineeringSettings,
       )
@@ -919,7 +1061,15 @@ const activeSheet = useMemo(
           `${target.deviceId}/${target.port.label}`,
       )
     },
-    [edges, engineeringSettings, setEdges],
+    [
+      
+  edges,
+  engineeringSettings,
+  getProjectEdges,
+  setEdges,
+  sheets,
+
+    ],
   )
 
   const onPortClick = useCallback(
@@ -965,6 +1115,9 @@ const activeSheet = useMemo(
     [createCable, selectedSource, toolMode],
   )
 
+  onPortClickRef.current = onPortClick
+  
+
   const changeRouteGeometry = useCallback(
     (
       nodeId: string,
@@ -997,6 +1150,8 @@ const activeSheet = useMemo(
     [setNodes],
   )
 
+
+
 useEffect(() => {
   if (activeSheetId !== MAIN_SHEET.id) {
     return
@@ -1026,11 +1181,11 @@ useEffect(() => {
   position: snapToEngineeringGrid(
     baseNode.position,
   ),
-  data: {
-    ...baseNode.data,
-    selectedSource,
-    onPortClick,
-  },
+data: {
+  ...baseNode.data,
+  selectedSource,
+  onPortClick: handlePortClick,
+},
 }
         }
 
@@ -1041,11 +1196,11 @@ useEffect(() => {
   position: snapToEngineeringGrid(
     existingNode.position,
   ),
-  data: {
-    ...baseNode.data,
-    selectedSource,
-    onPortClick,
-  },
+data: {
+  ...baseNode.data,
+  selectedSource,
+  onPortClick: handlePortClick,
+},
 }
       })
 
@@ -1056,7 +1211,7 @@ useEffect(() => {
   baseNodes,
   changeRouteGeometry,
   deletedDeviceIds,
-  onPortClick,
+  handlePortClick,
   selectedSource,
   setNodes,
 ])
@@ -1428,7 +1583,7 @@ const placeLibraryDevice = useCallback(
         rack: device.rack,
         ports,
         selectedSource,
-        onPortClick,
+        onPortClick: handlePortClick,
       },
     }
 
@@ -1461,7 +1616,7 @@ const placeLibraryDevice = useCallback(
     flowInstance,
     libraryTypes,
     nodes,
-    onPortClick,
+    handlePortClick,
     projectDevices,
     selectedSource,
     setNodes,
@@ -2180,7 +2335,7 @@ return
               rack: device.rack,
               ports: deviceType.ports,
               selectedSource: null,
-              onPortClick,
+              onPortClick: handlePortClick,
             },
           }]
         })
@@ -2232,7 +2387,7 @@ return
       changeRouteGeometry,
       flowInstance,
       libraryTypes,
-      onPortClick,
+      handlePortClick,
       rememberCurrentProject,
       resetHistory,
       setEdges,

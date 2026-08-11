@@ -87,29 +87,34 @@ export function LeftSidebar({
       </div>
 
       <div className="explorer-sections">
-        <ExplorerSection id="project" title="Project">
-          <button
-            type="button"
-            className="explorer-item"
-            onClick={() =>
-              onProjectItemClick?.('project-properties')
-            }
-          >
-            Projectgegevens
-          </button>
+<ExplorerSection
+  id="project"
+  title="📁 Project"
+>
+  <button
+    type="button"
+    className="explorer-item"
+    onClick={() =>
+      onProjectItemClick?.('project-properties')
+    }
+  >
+    📄 Projectgegevens
+  </button>
 
-          <button
-            type="button"
-            className="explorer-item"
-            onClick={() => onProjectItemClick?.('settings')}
-          >
-            Settings
-          </button>
-        </ExplorerSection>
+  <button
+    type="button"
+    className="explorer-item"
+    onClick={() =>
+      onProjectItemClick?.('settings')
+    }
+  >
+    ⚙ Engineering Settings
+  </button>
+</ExplorerSection>
 
         <ExplorerSection
           id="device-library"
-          title="Device Library"
+          title="📚 Device Library"
         >
           {deviceLibrary ?? (
             <span className="explorer-empty">
@@ -120,7 +125,7 @@ export function LeftSidebar({
 
         <ExplorerSection
           id="project-devices"
-          title="Project Devices"
+          title="🖥 Project Devices"
         >
           {projectDevices ?? (
             <span className="explorer-empty">
@@ -129,7 +134,7 @@ export function LeftSidebar({
           )}
         </ExplorerSection>
 
-        <ExplorerSection id="sheets" title="Sheets">
+        <ExplorerSection id="sheets" title="📄 Sheets">
           {sheets ?? (
             <button
               type="button"
@@ -140,7 +145,7 @@ export function LeftSidebar({
           )}
         </ExplorerSection>
 
-        <ExplorerSection id="reports" title="Reports">
+        <ExplorerSection id="reports" title="📊 Reports">
           {reports ?? (
             <>
               <button type="button" className="explorer-item">
