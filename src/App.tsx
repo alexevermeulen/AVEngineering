@@ -28,6 +28,12 @@ import {
   REACT_FLOW_FIT_OPTIONS,
 } from './canvas/ReactFlowConfig'
 
+import {
+  DEFAULT_SHEETS,
+  MAIN_SHEET,
+  type SheetDefinition,
+} from './canvas/SheetDefinition'
+
 import { ReactFlowViewport } from './canvas/ReactFlowViewport'
 import { CanvasView } from './canvas/CanvasView'
 import { DeviceLibrary } from './DeviceLibrary'
@@ -435,7 +441,19 @@ function App() {
     useState<EngineeringSettings>(() => loadEngineeringSettings())
 
   const [mainView, setMainView] = useState<MainView>('canvas')
+  const [sheets] = useState<SheetDefinition[]>(
+  () => DEFAULT_SHEETS.map((sheet) => ({ ...sheet })),
+)
 
+const [activeSheetId, setActiveSheetId] =
+  useState(MAIN_SHEET.id)
+
+const activeSheet = useMemo(
+  () =>
+    sheets.find((sheet) => sheet.id === activeSheetId) ??
+    MAIN_SHEET,
+  [activeSheetId, sheets],
+)
 
 
 
@@ -2217,15 +2235,31 @@ onZoom100={() => {
               Open Device Library
             </button>
           }
-          sheets={
-            <button
-              type="button"
-              className="explorer-item"
-              onClick={() => setMainView('canvas')}
-            >
-              Main
-            </button>
-          }
+
+         sheets={
+  <>
+    {sheets.map((sheet) => (
+      <button
+        key={sheet.id}
+        type="button"
+        className={
+          activeSheetId === sheet.id
+            ? 'explorer-item explorer-item-selected'
+            : 'explorer-item'
+        }
+        onClick={() => {
+          setActiveSheetId(sheet.id)
+          setMainView('canvas')
+          setStatus(`Sheet ${sheet.name} geopend.`)
+        }}
+      >
+        {sheet.name}
+      </button>
+    ))}
+  </>
+}
+
+
           reports={
             <>
               <button
@@ -2258,7 +2292,7 @@ onZoom100={() => {
 <Workspace
   activeView={mainView}
   canvas={
-    <CanvasView>
+    <CanvasView sheet={activeSheet}>
       <ReactFlow<AppNode, CableEdge>
         nodes={nodes}
         edges={edges}
