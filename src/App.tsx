@@ -174,12 +174,16 @@ export type SavedProjectFileV2 = {
  */
 type SavedProjectFile = SavedProjectFileV1
 
+type SupportedProjectFile =
+  | SavedProjectFileV1
+  | SavedProjectFileV2
+
 type RecentProjectRecord = {
   id: string
   name: string
   location: string
   updatedAt: string
-  file: SavedProjectFile
+  file: SupportedProjectFile
 }
 
 type ProjectEditorValues = {
@@ -2601,8 +2605,8 @@ const buildProjectFile = useCallback(
   ],
 )
 
-  const rememberCurrentProject = useCallback(
-    (projectFile: SavedProjectFile) => {
+const rememberCurrentProject = useCallback(
+  (projectFile: SupportedProjectFile) => {
       const id = [
         projectFile.sourceProject.name,
         projectFile.sourceProject.location,
@@ -2729,9 +2733,10 @@ const buildProjectFile = useCallback(
       return
     }
 
-
+    rememberCurrentProject(file)
 
     const safeProjectName = projectData.project.name
+
       .trim()
       .replace(/[^a-zA-Z0-9-_]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'av-project'
@@ -2753,7 +2758,9 @@ const buildProjectFile = useCallback(
     setStatus('Projectbestand opgeslagen.')
   }, [
     buildProjectFile,
+
     projectData,
+    rememberCurrentProject,
   
   ])
 
@@ -3075,6 +3082,30 @@ const buildProjectFile = useCallback(
   ],
 )
 
+const restoreSupportedProjectFile = useCallback(
+  (
+    projectFile: SupportedProjectFile,
+    sourceName: string,
+  ) => {
+    if (projectFile.formatVersion === 2) {
+      restoreProjectFileV2(
+        projectFile,
+        sourceName,
+      )
+      return
+    }
+
+    restoreProjectFile(
+      projectFile,
+      sourceName,
+    )
+  },
+  [
+    restoreProjectFile,
+    restoreProjectFileV2,
+  ],
+)
+
 
 
 
@@ -3166,12 +3197,12 @@ if (parsed.formatVersion === 1) {
     )
   }
 
-  restoreProjectFile(
-    projectFile,
-    selectedFile.name,
-  )
+restoreSupportedProjectFile(
+  projectFile,
+  selectedFile.name,
+)
 
-  return
+return
 }
 
 if (parsed.formatVersion === 2) {
@@ -3188,12 +3219,12 @@ if (parsed.formatVersion === 2) {
     )
   }
 
-  restoreProjectFileV2(
-    projectFile,
-    selectedFile.name,
-  )
+restoreSupportedProjectFile(
+  projectFile,
+  selectedFile.name,
+)
 
-  return
+return
 }
 
 throw new Error(
@@ -3213,10 +3244,9 @@ throw new Error(
         }
       }
     },
-    [
-      restoreProjectFile,
-      restoreProjectFileV2,
-    ],
+            [
+              restoreSupportedProjectFile,
+            ],
   )
 
   if (error) {
@@ -3904,12 +3934,14 @@ onZoom100={() => {
                   <div className="recent-project-actions">
                     <button
                       type="button"
+
                       onClick={() =>
-                        restoreProjectFile(
+                        restoreSupportedProjectFile(
                           recent.file,
                           recent.name,
                         )
                       }
+
                     >
                       Open
                     </button>
