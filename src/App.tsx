@@ -204,7 +204,7 @@ export function buildSavedSheetV2(
   sheet: SheetDefinition,
   snapshot: HistorySnapshot,
   viewport: Viewport,
-): SavedSheetV2 {
+  ): SavedSheetV2 {
   const deviceNodes: SavedDeviceNode[] = snapshot.nodes
     .filter(
       (node): node is DeviceNode =>
@@ -266,7 +266,7 @@ export function buildSavedSheetsV2(
   storedSnapshots: Record<string, HistorySnapshot>,
   currentViewport: Viewport,
   storedViewports: Record<string, Viewport>,
-): SavedSheetV2[] {
+  ): SavedSheetV2[] {
   return sheets.map((sheet) => {
     const snapshot =
       sheet.id === activeSheetId
@@ -341,6 +341,7 @@ export function restoreSavedSheetV2(
     },
   ) => void,
 ): HistorySnapshot {
+  
   const deviceById = new Map(
     projectDevices.map((device) => [
       device.sysname,
@@ -828,7 +829,7 @@ const handlePortClick = useCallback(
     onPortClickRef.current(endpoint)
   },
   [],
-)
+  )
 
 
 
