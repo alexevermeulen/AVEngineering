@@ -88,7 +88,7 @@ type SavedGraphicRouteNode = {
   }
 }
 
-type SavedProjectFile = {
+type SavedProjectFileV1 = {
   format: 'av-engineering-project'
   formatVersion: 1
   savedAt: string
@@ -100,6 +100,79 @@ type SavedProjectFile = {
   graphicRoutes: SavedGraphicRouteNode[]
   edges: CableEdge[]
 }
+
+/*
+ * Eén echte fysieke kabel in het project.
+ *
+ * Deze bestaat maar één keer, ongeacht op hoeveel
+ * sheets hij grafisch wordt weergegeven.
+ */
+type SavedConnectionV2 = {
+  id: string
+
+  cableNumber: string
+  signal: Signal
+
+  sourceDevice: string
+  sourcePort: string
+  sourceConnector: string
+
+  targetDevice: string
+  targetPort: string
+  targetConnector: string
+}
+
+/*
+ * Grafische representatie van een fysieke kabel
+ * op één specifieke sheet.
+ */
+type SavedCableRepresentationV2 = {
+  connectionId: string
+  displayMode: CableDisplayMode
+  featherLane: number
+}
+
+/*
+ * Alles wat specifiek bij één sheet hoort.
+ */
+type SavedSheetV2 = {
+  id: string
+  name: string
+  title: string
+  revision: string
+  signals: Signal[] | null
+
+  viewport: Viewport
+
+  deviceNodes: SavedDeviceNode[]
+  graphicRoutes: SavedGraphicRouteNode[]
+
+  cableRepresentations: SavedCableRepresentationV2[]
+}
+
+/*
+ * Nieuw multi-sheet projectformaat.
+ */
+export type SavedProjectFileV2 = {
+  format: 'av-engineering-project'
+  formatVersion: 2
+  savedAt: string
+
+  sourceProject: ProjectData['project']
+  projectDevices: Device[]
+
+  activeSheetId: string
+
+  sheets: SavedSheetV2[]
+  connections: SavedConnectionV2[]
+}
+
+/*
+ * Voorlopig blijft de bestaande applicatie nog v1 gebruiken.
+ *
+ * Hierdoor verandert in deze stap functioneel helemaal niets.
+ */
+type SavedProjectFile = SavedProjectFileV1
 
 type RecentProjectRecord = {
   id: string
@@ -120,6 +193,258 @@ type ProjectEditorValues = {
 type HistorySnapshot = {
   nodes: AppNode[]
   edges: CableEdge[]
+}
+
+
+export function buildSavedSheetV2(
+  sheet: SheetDefinition,
+  snapshot: HistorySnapshot,
+  viewport: Viewport,
+): SavedSheetV2 {
+  const deviceNodes: SavedDeviceNode[] = snapshot.nodes
+    .filter(
+      (node): node is DeviceNode =>
+        node.type === 'device',
+    )
+    .map((node) => ({
+      id: node.id,
+      position: node.position,
+    }))
+
+  const graphicRoutes: SavedGraphicRouteNode[] =
+    snapshot.nodes
+      .filter(
+        (node): node is GraphicURouteNode =>
+          node.type === 'graphic-u-route',
+      )
+      .map((node) => ({
+        id: node.id,
+        position: node.position,
+        data: {
+          signal: node.data.signal,
+          width: node.data.width,
+          leftHeight: node.data.leftHeight,
+          rightHeight: node.data.rightHeight,
+        },
+      }))
+
+  const cableRepresentations: SavedCableRepresentationV2[] =
+    snapshot.edges.flatMap((edge) => {
+      if (!edge.data) {
+        return []
+      }
+
+      return [{
+        connectionId: edge.id,
+        displayMode: edge.data.displayMode,
+        featherLane: edge.data.featherLane ?? 0,
+      }]
+    })
+
+  return {
+    id: sheet.id,
+    name: sheet.name,
+    title: sheet.title,
+    revision: sheet.revision,
+    signals: sheet.signals,
+    viewport,
+    deviceNodes,
+    graphicRoutes,
+    cableRepresentations,
+  }
+}
+
+
+export function buildSavedSheetsV2(
+  sheets: SheetDefinition[],
+  activeSheetId: string,
+  currentSnapshot: HistorySnapshot,
+  storedSnapshots: Record<string, HistorySnapshot>,
+  currentViewport: Viewport,
+  storedViewports: Record<string, Viewport>,
+): SavedSheetV2[] {
+  return sheets.map((sheet) => {
+    const snapshot =
+      sheet.id === activeSheetId
+        ? currentSnapshot
+        : storedSnapshots[sheet.id] ?? {
+            nodes: [],
+            edges: [],
+          }
+
+    const viewport =
+      sheet.id === activeSheetId
+        ? currentViewport
+        : storedViewports[sheet.id] ?? {
+            x: 0,
+            y: 0,
+            zoom: 1,
+          }
+
+    return buildSavedSheetV2(
+      sheet,
+      snapshot,
+      viewport,
+    )
+  })
+}
+
+export function restoreCableEdgeV2(
+  connection: SavedConnectionV2,
+  representation: SavedCableRepresentationV2,
+): CableEdge {
+  return {
+    id: connection.id,
+    type: 'cable',
+
+    source: connection.sourceDevice,
+    sourceHandle: `port:${connection.sourcePort}`,
+
+    target: connection.targetDevice,
+    targetHandle: `port:${connection.targetPort}`,
+
+    data: {
+      cableNumber: connection.cableNumber,
+      signal: connection.signal,
+
+      displayMode: representation.displayMode,
+
+      sourceDevice: connection.sourceDevice,
+      sourcePort: connection.sourcePort,
+      sourceConnector: connection.sourceConnector,
+
+      targetDevice: connection.targetDevice,
+      targetPort: connection.targetPort,
+      targetConnector: connection.targetConnector,
+
+      featherLane: representation.featherLane,
+    },
+  }
+}
+
+export function restoreSavedSheetV2(
+  savedSheet: SavedSheetV2,
+  connections: SavedConnectionV2[],
+  projectDevices: Device[],
+  deviceTypes: DeviceType[],
+  onPortClick: (endpoint: Endpoint) => void,
+  onChangeGeometry: (
+    nodeId: string,
+    geometry: {
+      width?: number
+      leftHeight?: number
+      rightHeight?: number
+    },
+  ) => void,
+): HistorySnapshot {
+  const deviceById = new Map(
+    projectDevices.map((device) => [
+      device.sysname,
+      device,
+    ]),
+  )
+
+  const deviceTypeByRef = new Map(
+    deviceTypes.map((deviceType) => [
+      `${deviceType.mfg}/${deviceType.model}`,
+      deviceType,
+    ]),
+  )
+
+  const connectionById = new Map(
+    connections.map((connection) => [
+      connection.id,
+      connection,
+    ]),
+  )
+
+  const sheetDefinition: SheetDefinition = {
+    id: savedSheet.id,
+    name: savedSheet.name,
+    title: savedSheet.title,
+    revision: savedSheet.revision,
+    signals: savedSheet.signals,
+  }
+
+  const deviceNodes: DeviceNode[] =
+    savedSheet.deviceNodes.flatMap((savedNode) => {
+      const device = deviceById.get(savedNode.id)
+
+      if (!device) {
+        return []
+      }
+
+      const deviceType =
+        deviceTypeByRef.get(device.type_ref)
+
+      if (!deviceType) {
+        return []
+      }
+
+      const data: DeviceNodeData = {
+        sysname: device.sysname,
+        manufacturer: deviceType.mfg,
+        model: deviceType.model,
+        description: deviceType.short_desc,
+        location: device.location,
+        rack: device.rack,
+        ports: getPortsForSheet(
+          deviceType,
+          sheetDefinition,
+        ),
+        selectedSource: null,
+        onPortClick,
+      }
+
+      return [{
+        id: device.sysname,
+        type: 'device',
+        dragHandle: '.drag-handle',
+        position: savedNode.position,
+        data,
+      }]
+    })
+
+  const graphicRoutes: GraphicURouteNode[] =
+    savedSheet.graphicRoutes.map((route) => ({
+      id: route.id,
+      type: 'graphic-u-route',
+      dragHandle: '.drag-handle',
+      position: route.position,
+      data: {
+        ...route.data,
+        onChangeGeometry,
+      },
+    }))
+
+  const restoredEdges: CableEdge[] =
+    savedSheet.cableRepresentations.flatMap(
+      (representation) => {
+        const connection =
+          connectionById.get(
+            representation.connectionId,
+          )
+
+        if (!connection) {
+          return []
+        }
+
+        return [
+          restoreCableEdgeV2(
+            connection,
+            representation,
+          ),
+        ]
+      },
+    )
+
+  return {
+    nodes: [
+      ...deviceNodes,
+      ...graphicRoutes,
+    ],
+    edges: restoredEdges,
+  }
 }
 
 const HISTORY_LIMIT = 100
@@ -608,6 +933,10 @@ const handlePortClick = useCallback(
   Record<string, HistorySnapshot>
 >({})  
 
+const sheetViewportsRef = useRef<
+  Record<string, Viewport>
+>({})
+
   const updateHistoryButtons = useCallback(() => {
     setCanUndo(undoStackRef.current.length > 0)
     setCanRedo(redoStackRef.current.length > 0)
@@ -639,6 +968,13 @@ const handlePortClick = useCallback(
       window.clearTimeout(historyTimerRef.current)
       historyTimerRef.current = null
     }
+
+// Viewport van de huidige sheet bewaren
+if (flowInstance) {
+  sheetViewportsRef.current[activeSheetId] =
+    flowInstance.getViewport()
+}
+
 
     // Huidige sheet bewaren
     sheetContentsRef.current[activeSheetId] =
@@ -687,14 +1023,25 @@ const handlePortClick = useCallback(
     )
 
     window.requestAnimationFrame(() => {
-      applyingHistoryRef.current = false
-    })
+  const nextViewport =
+    sheetViewportsRef.current[nextSheetId] ?? {
+      x: 0,
+      y: 0,
+      zoom: 1,
+    }
+
+  flowInstance?.setViewport(nextViewport)
+  setViewportZoom(nextViewport.zoom)
+
+  applyingHistoryRef.current = false
+})
 
     setStatus(`Sheet ${nextSheetName} geopend.`)
   },
   [
     activeSheetId,
     edges,
+    flowInstance,
     nodes,
     resetHistory,
     setEdges,
@@ -862,6 +1209,9 @@ const handlePortClick = useCallback(
         })),
     )
 
+    
+
+
   const currentEdges = edges.map((edge) => ({
     sheetId: activeSheetId,
     edge,
@@ -877,18 +1227,69 @@ const handlePortClick = useCallback(
   edges,
 ])
 
+const buildProjectConnectionsV2 = useCallback(
+  (): SavedConnectionV2[] => {
+    const connections = new Map<string, SavedConnectionV2>()
+
+    getProjectEdges().forEach(({ edge }) => {
+      /*
+       * Dezelfde fysieke kabel kan op meerdere sheets
+       * voorkomen met dezelfde edge.id.
+       */
+      if (connections.has(edge.id)) {
+        return
+      }
+
+      if (!edge.data) {
+        return
+      }
+
+      connections.set(edge.id, {
+        id: edge.id,
+        cableNumber: edge.data.cableNumber,
+        signal: edge.data.signal,
+
+        sourceDevice:
+          edge.data.sourceDevice ?? edge.source,
+        sourcePort:
+          edge.data.sourcePort ??
+          edge.sourceHandle?.replace(/^port:/, '') ??
+          '',
+        sourceConnector:
+          edge.data.sourceConnector ?? '',
+
+        targetDevice:
+          edge.data.targetDevice ?? edge.target,
+        targetPort:
+          edge.data.targetPort ??
+          edge.targetHandle?.replace(/^port:/, '') ??
+          '',
+        targetConnector:
+          edge.data.targetConnector ?? '',
+      })
+    })
+
+    return [...connections.values()]
+  },
+  [getProjectEdges],
+)
+
+
+
 const projectCableNumbers = useMemo(() => {
-  const numbers = getProjectEdges()
-    .filter(({ edge }) => edge.id !== selectedEdgeId)
-    .flatMap(({ edge }) =>
-      edge.data?.cableNumber
-        ? [edge.data.cableNumber]
-        : [],
+  const numbers = buildProjectConnectionsV2()
+    .filter(
+      (connection) =>
+        connection.id !== selectedEdgeId,
+    )
+    .map(
+      (connection) =>
+        connection.cableNumber,
     )
 
   return [...new Set(numbers)]
 }, [
-  getProjectEdges,
+  buildProjectConnectionsV2,
   selectedEdgeId,
 ])
 
@@ -2150,52 +2551,55 @@ Object.entries(sheetContentsRef.current).forEach(
     ],
   )
 
-  const buildProjectFile = useCallback((): SavedProjectFile | null => {
-    if (!projectData || !flowInstance) return null
+const buildProjectFile = useCallback(
+  (): SavedProjectFileV2 | null => {
+    if (!projectData || !flowInstance) {
+      return null
+    }
 
-    const deviceNodes: SavedDeviceNode[] = nodes
-      .filter((node): node is DeviceNode => node.type === 'device')
-      .map((node) => ({
-        id: node.id,
-        position: node.position,
-      }))
+    const currentSnapshot =
+      cloneHistorySnapshot(nodes, edges)
 
-    const graphicRoutes: SavedGraphicRouteNode[] = nodes
-      .filter(
-        (node): node is GraphicURouteNode =>
-          node.type === 'graphic-u-route',
-      )
-      .map((node) => ({
-        id: node.id,
-        position: node.position,
-        data: {
-          signal: node.data.signal,
-          width: node.data.width,
-          leftHeight: node.data.leftHeight,
-          rightHeight: node.data.rightHeight,
-        },
-      }))
+    const currentViewport =
+      flowInstance.getViewport()
+
+    const savedSheets = buildSavedSheetsV2(
+      sheets,
+      activeSheetId,
+      currentSnapshot,
+      sheetContentsRef.current,
+      currentViewport,
+      sheetViewportsRef.current,
+    )
+
+    const connections =
+      buildProjectConnectionsV2()
 
     return {
       format: 'av-engineering-project',
-      formatVersion: 1,
+      formatVersion: 2,
       savedAt: new Date().toISOString(),
+
       sourceProject: projectData.project,
       projectDevices,
-      viewport: flowInstance.getViewport(),
-      deviceNodes,
-      deletedDeviceIds,
-      graphicRoutes,
-      edges,
+
+      activeSheetId,
+
+      sheets: savedSheets,
+      connections,
     }
-  }, [
-    deletedDeviceIds,
+  },
+  [
+    activeSheetId,
+    buildProjectConnectionsV2,
     edges,
     flowInstance,
     nodes,
     projectData,
     projectDevices,
-  ])
+    sheets,
+  ],
+)
 
   const rememberCurrentProject = useCallback(
     (projectFile: SavedProjectFile) => {
@@ -2325,7 +2729,7 @@ Object.entries(sheetContentsRef.current).forEach(
       return
     }
 
-    rememberCurrentProject(file)
+
 
     const safeProjectName = projectData.project.name
       .trim()
@@ -2350,7 +2754,7 @@ Object.entries(sheetContentsRef.current).forEach(
   }, [
     buildProjectFile,
     projectData,
-    rememberCurrentProject,
+  
   ])
 
   const restoreProjectFile = useCallback(
@@ -2492,6 +2896,188 @@ Object.entries(sheetContentsRef.current).forEach(
     ],
   )
   
+  const restoreProjectFileV2 = useCallback(
+  (
+    projectFile: SavedProjectFileV2,
+    sourceName: string,
+  ) => {
+    const restoredProjectDevices =
+      Array.isArray(projectFile.projectDevices)
+        ? projectFile.projectDevices
+        : []
+
+    const restoredSheets =
+      Array.isArray(projectFile.sheets)
+        ? projectFile.sheets
+        : []
+
+    const restoredConnections =
+      Array.isArray(projectFile.connections)
+        ? projectFile.connections
+        : []
+
+    /*
+     * Alle sheets reconstrueren.
+     */
+    const restoredSnapshots:
+      Record<string, HistorySnapshot> = {}
+
+    restoredSheets.forEach((savedSheet) => {
+      restoredSnapshots[savedSheet.id] =
+        restoreSavedSheetV2(
+          savedSheet,
+          restoredConnections,
+          restoredProjectDevices,
+          libraryTypes,
+          handlePortClick,
+          changeRouteGeometry,
+        )
+    })
+
+    /*
+     * Alleen een sheet activeren die ook werkelijk
+     * in de huidige sheetlijst bestaat.
+     */
+    const restoredActiveSheetId =
+      sheets.some(
+        (sheet) =>
+          sheet.id === projectFile.activeSheetId,
+      )
+        ? projectFile.activeSheetId
+        : MAIN_SHEET.id
+
+    const activeSnapshot =
+      restoredSnapshots[restoredActiveSheetId] ?? {
+        nodes: [],
+        edges: [],
+      }
+
+    /*
+     * Viewports van alle sheets herstellen.
+     */
+    const restoredViewports =
+      Object.fromEntries(
+        restoredSheets.map((sheet) => [
+          sheet.id,
+          sheet.viewport,
+        ]),
+      ) as Record<string, Viewport>
+
+    const activeViewport =
+      restoredViewports[restoredActiveSheetId] ?? {
+        x: 0,
+        y: 0,
+        zoom: 1,
+      }
+
+    /*
+     * Main gebruikt voorlopig nog deletedDeviceIds
+     * om te bepalen welke projectdevices daar NIET
+     * geplaatst zijn.
+     *
+     * Daarom reconstrueren we deze lijst uit de
+     * expliciet opgeslagen Main-placements.
+     */
+    const mainSavedSheet =
+      restoredSheets.find(
+        (sheet) =>
+          sheet.id === MAIN_SHEET.id,
+      )
+
+    const mainPlacedDeviceIds =
+      new Set(
+        mainSavedSheet?.deviceNodes.map(
+          (node) => node.id,
+        ) ?? [],
+      )
+
+    const restoredDeletedDeviceIds =
+      restoredProjectDevices
+        .filter(
+          (device) =>
+            !mainPlacedDeviceIds.has(
+              device.sysname,
+            ),
+        )
+        .map((device) => device.sysname)
+
+    applyingHistoryRef.current = true
+
+    /*
+     * Alle opgeslagen sheetinhoud terugzetten.
+     */
+    sheetContentsRef.current =
+      restoredSnapshots
+
+    sheetViewportsRef.current =
+      restoredViewports
+
+    setProjectData({
+      project: projectFile.sourceProject,
+      types: [],
+      devices: restoredProjectDevices,
+    })
+
+    setProjectDevices(
+      restoredProjectDevices,
+    )
+
+    setDeletedDeviceIds(
+      restoredDeletedDeviceIds,
+    )
+
+    setNodes(activeSnapshot.nodes)
+    setEdges(activeSnapshot.edges)
+
+    setActiveSheetId(
+      restoredActiveSheetId,
+    )
+
+    resetHistory(
+      activeSnapshot.nodes,
+      activeSnapshot.edges,
+    )
+
+    setSelectedSource(null)
+    setSelectedEdgeId(null)
+    setSelectedNodeId(null)
+    setEditingDeviceId(null)
+    setToolMode('select')
+    setMainView('canvas')
+
+    window.requestAnimationFrame(() => {
+      flowInstance?.setViewport(
+        activeViewport,
+      )
+
+      setViewportZoom(
+        activeViewport.zoom,
+      )
+
+      applyingHistoryRef.current = false
+    })
+
+    setShowRecentProjects(false)
+
+    setStatus(
+      `Project geopend: ${sourceName}`,
+    )
+  },
+  [
+    changeRouteGeometry,
+    flowInstance,
+    handlePortClick,
+    libraryTypes,
+    resetHistory,
+    setEdges,
+    setNodes,
+    sheets,
+  ],
+)
+
+
+
+
   const updateProjectProperty = useCallback(
   (
     field:
@@ -2552,29 +3138,69 @@ Object.entries(sheetContentsRef.current).forEach(
           throw new Error('Dit is geen geldig AV-projectbestand.')
         }
 
-        const projectFile = parsed as SavedProjectFile
+       if (
+  !('format' in parsed) ||
+  parsed.format !== 'av-engineering-project'
+) {
+  throw new Error('Dit is geen geldig AV-projectbestand.')
+}
 
-        if (
-          projectFile.format !== 'av-engineering-project' ||
-          projectFile.formatVersion !== 1
-        ) {
-          throw new Error(
-            `Niet-ondersteunde projectversie: ${projectFile.formatVersion}`,
-          )
-        }
+if (
+  !('formatVersion' in parsed) ||
+  typeof parsed.formatVersion !== 'number'
+) {
+  throw new Error('Projectversie ontbreekt.')
+}
 
-        if (
-          !Array.isArray(projectFile.deviceNodes) ||
-          !Array.isArray(projectFile.graphicRoutes) ||
-          !Array.isArray(projectFile.edges)
-        ) {
-          throw new Error('Het projectbestand is onvolledig.')
-        }
+if (parsed.formatVersion === 1) {
+  const projectFile =
+    parsed as SavedProjectFileV1
 
-        restoreProjectFile(
-          projectFile,
-          selectedFile.name,
-        )
+  if (
+    !Array.isArray(projectFile.deviceNodes) ||
+    !Array.isArray(projectFile.graphicRoutes) ||
+    !Array.isArray(projectFile.edges)
+  ) {
+    throw new Error(
+      'Het v1-projectbestand is onvolledig.',
+    )
+  }
+
+  restoreProjectFile(
+    projectFile,
+    selectedFile.name,
+  )
+
+  return
+}
+
+if (parsed.formatVersion === 2) {
+  const projectFile =
+    parsed as SavedProjectFileV2
+
+  if (
+    !Array.isArray(projectFile.projectDevices) ||
+    !Array.isArray(projectFile.sheets) ||
+    !Array.isArray(projectFile.connections)
+  ) {
+    throw new Error(
+      'Het v2-projectbestand is onvolledig.',
+    )
+  }
+
+  restoreProjectFileV2(
+    projectFile,
+    selectedFile.name,
+  )
+
+  return
+}
+
+throw new Error(
+  `Niet-ondersteunde projectversie: ${parsed.formatVersion}`,
+)
+
+
       } catch (openError: unknown) {
         setStatus(
           openError instanceof Error
@@ -2587,7 +3213,10 @@ Object.entries(sheetContentsRef.current).forEach(
         }
       }
     },
-    [restoreProjectFile],
+    [
+      restoreProjectFile,
+      restoreProjectFileV2,
+    ],
   )
 
   if (error) {
