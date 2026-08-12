@@ -846,7 +846,8 @@ const handlePortClick = useCallback(
   ])
 
   const getProjectEdges = useCallback(() => {
-  const storedEdges = Object.entries(
+ 
+    const storedEdges = Object.entries(
     sheetContentsRef.current,
   )
     .filter(
@@ -867,12 +868,28 @@ const handlePortClick = useCallback(
   }))
 
   return [
-    ...storedEdges,
     ...currentEdges,
+    ...storedEdges,
+  
   ]
 }, [
   activeSheetId,
   edges,
+])
+
+const projectCableNumbers = useMemo(() => {
+  const numbers = getProjectEdges()
+    .filter(({ edge }) => edge.id !== selectedEdgeId)
+    .flatMap(({ edge }) =>
+      edge.data?.cableNumber
+        ? [edge.data.cableNumber]
+        : [],
+    )
+
+  return [...new Set(numbers)]
+}, [
+  getProjectEdges,
+  selectedEdgeId,
 ])
 
 
@@ -2032,21 +2049,72 @@ return
         return
       }
 
+      const numberAlreadyInUse = getProjectEdges().some(
+  ({ edge: projectEdge }) =>
+    projectEdge.id !== edgeId &&
+    projectEdge.data?.cableNumber === newCableNumber,
+)
+
+if (numberAlreadyInUse) {
+  setStatus(
+    `Kabelnummer ${newCableNumber} is al in gebruik in dit project.`,
+  )
+  return
+}
+
+
       const signalId = edge.data.signal
 
-      setEdges((current) =>
-        current.map((item) =>
-          item.id === edgeId && item.data
-            ? {
-                ...item,
-                data: {
-                  ...item.data,
-                  cableNumber: newCableNumber,
-                },
-              }
-            : item,
-        ),
-      )
+      /*
+ * Actieve sheet bijwerken.
+ */
+setEdges((current) =>
+  current.map((item) =>
+    item.id === edgeId && item.data
+      ? {
+          ...item,
+          data: {
+            ...item.data,
+            cableNumber: newCableNumber,
+          },
+        }
+      : item,
+  ),
+)
+
+/*
+ * Dezelfde fysieke kabel kan op meerdere sheets
+ * grafisch worden weergegeven.
+ *
+ * Omdat alle representaties dezelfde edge.id hebben,
+ * kunnen we het kabelnummer projectbreed synchroniseren.
+ */
+Object.entries(sheetContentsRef.current).forEach(
+  ([sheetId, snapshot]) => {
+    const containsCable = snapshot.edges.some(
+      (item) => item.id === edgeId,
+    )
+
+    if (!containsCable) {
+      return
+    }
+
+    sheetContentsRef.current[sheetId] = {
+      ...snapshot,
+      edges: snapshot.edges.map((item) =>
+        item.id === edgeId && item.data
+          ? {
+              ...item,
+              data: {
+                ...item.data,
+                cableNumber: newCableNumber,
+              },
+            }
+          : item,
+      ),
+    }
+  },
+)
 
       /*
        * Het handmatig ingevoerde nummer wordt het nieuwe startpunt.
@@ -2075,7 +2143,11 @@ return
           ).padStart(4, '0')}.`,
       )
     },
-    [edges, setEdges],
+    [
+      edges, 
+      getProjectEdges,
+      setEdges
+    ],
   )
 
   const buildProjectFile = useCallback((): SavedProjectFile | null => {
@@ -2983,9 +3055,9 @@ onZoom100={() => {
             ? edges.find((edge) => edge.id === selectedEdgeId)?.data ?? null
             : null
         }
-        existingCableNumbers={edges.flatMap((edge) =>
-          edge.data?.cableNumber ? [edge.data.cableNumber] : [],
-        )}
+
+        existingCableNumbers={projectCableNumbers}
+        
         signalTypes={engineeringSettings.signalTypes}
         onClose={() => setShowCableEditor(false)}
         onSave={saveEditedCableNumber}
