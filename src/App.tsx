@@ -903,49 +903,74 @@ const handlePortClick = useCallback(
         return
       }
 
-      const projectEdges = getProjectEdges()
+const projectEdges = getProjectEdges()
 
 const existingConnection =
   projectEdges.find(({ edge }) => {
     const forwardMatch =
       edge.source === source.deviceId &&
-      edge.sourceHandle ===
-        `port:${source.port.label}` &&
+      edge.sourceHandle === `port:${source.port.label}` &&
       edge.target === target.deviceId &&
-      edge.targetHandle ===
-        `port:${target.port.label}`
+      edge.targetHandle === `port:${target.port.label}`
 
-    /*
-     * Ook omgekeerd controleren.
-     * Vooral belangrijk voor bidirectionele
-     * netwerkpoorten.
-     */
     const reverseMatch =
       edge.source === target.deviceId &&
-      edge.sourceHandle ===
-        `port:${target.port.label}` &&
+      edge.sourceHandle === `port:${target.port.label}` &&
       edge.target === source.deviceId &&
-      edge.targetHandle ===
-        `port:${source.port.label}`
+      edge.targetHandle === `port:${source.port.label}`
 
     return forwardMatch || reverseMatch
   })
 
 if (existingConnection) {
-  const sheetName =
+  const cableNumber =
+    existingConnection.edge.data?.cableNumber ??
+    existingConnection.edge.id
+
+  if (existingConnection.sheetId === activeSheetId) {
+    setSelectedSource(null)
+
+    setStatus(
+      `${cableNumber} staat al op sheet ${activeSheet.name}.`,
+    )
+
+    return
+  }
+
+  const sourceSheetName =
     sheets.find(
       (sheet) =>
         sheet.id === existingConnection.sheetId,
     )?.name ??
     existingConnection.sheetId
 
+  const representedEdge: CableEdge = {
+    ...existingConnection.edge,
+    data: existingConnection.edge.data
+      ? { ...existingConnection.edge.data }
+      : existingConnection.edge.data,
+    style: existingConnection.edge.style
+      ? { ...existingConnection.edge.style }
+      : undefined,
+    labelStyle: existingConnection.edge.labelStyle
+      ? { ...existingConnection.edge.labelStyle }
+      : undefined,
+    labelBgStyle: existingConnection.edge.labelBgStyle
+      ? { ...existingConnection.edge.labelBgStyle }
+      : undefined,
+  }
+
+  setEdges((current) => [
+    ...current,
+    representedEdge,
+  ])
+
   setSelectedSource(null)
+  setSelectedEdgeId(representedEdge.id)
 
   setStatus(
-    `Verbinding bestaat al als ${
-      existingConnection.edge.data?.cableNumber ??
-      existingConnection.edge.id
-    } op sheet ${sheetName}.`,
+    `${cableNumber} uit sheet ${sourceSheetName} ` +
+      `ook op sheet ${activeSheet.name} weergegeven.`,
   )
 
   return
