@@ -3065,6 +3065,8 @@ const rememberCurrentProject = useCallback(
       applyingHistoryRef.current = false
     })
 
+    rememberCurrentProject(projectFile)
+
     setShowRecentProjects(false)
 
     setStatus(
@@ -3076,6 +3078,7 @@ const rememberCurrentProject = useCallback(
     flowInstance,
     handlePortClick,
     libraryTypes,
+    rememberCurrentProject,
     resetHistory,
     setEdges,
     setNodes,
