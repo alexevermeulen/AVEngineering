@@ -95,3 +95,74 @@ export type SavedProjectFileV2 = {
 export type SupportedProjectFile =
   | SavedProjectFileV1
   | SavedProjectFileV2
+
+  export function parseSupportedProjectFile(
+  value: unknown,
+): SupportedProjectFile {
+  if (
+    typeof value !== 'object' ||
+    value === null
+  ) {
+    throw new Error(
+      'Dit is geen geldig AV-projectbestand.',
+    )
+  }
+
+  const parsed =
+    value as Record<string, unknown>
+
+  if (
+    parsed.format !==
+    'av-engineering-project'
+  ) {
+    throw new Error(
+      'Dit is geen geldig AV-projectbestand.',
+    )
+  }
+
+  if (
+    typeof parsed.formatVersion !== 'number'
+  ) {
+    throw new Error(
+      'Projectversie ontbreekt.',
+    )
+  }
+
+  if (parsed.formatVersion === 1) {
+    const projectFile =
+      value as SavedProjectFileV1
+
+    if (
+      !Array.isArray(projectFile.deviceNodes) ||
+      !Array.isArray(projectFile.graphicRoutes) ||
+      !Array.isArray(projectFile.edges)
+    ) {
+      throw new Error(
+        'Het v1-projectbestand is onvolledig.',
+      )
+    }
+
+    return projectFile
+  }
+
+  if (parsed.formatVersion === 2) {
+    const projectFile =
+      value as SavedProjectFileV2
+
+    if (
+      !Array.isArray(projectFile.projectDevices) ||
+      !Array.isArray(projectFile.sheets) ||
+      !Array.isArray(projectFile.connections)
+    ) {
+      throw new Error(
+        'Het v2-projectbestand is onvolledig.',
+      )
+    }
+
+    return projectFile
+  }
+
+  throw new Error(
+    `Niet-ondersteunde projectversie: ${parsed.formatVersion}`,
+  )
+}

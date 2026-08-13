@@ -47,6 +47,26 @@ import { RightSidebar } from './layout/RightSidebar'
 import { Workspace } from './layout/Workspace'
 import { Toolbar } from './layout/Toolbar'
 import { getPortsForSheet } from './canvas/SheetPorts'
+import { MenuBar } from './MenuBar'
+import { Ribbon } from './Ribbon'
+
+import {
+  parseSupportedProjectFile,
+} from './ProjectFile'
+
+
+import type {
+  SavedCableRepresentationV2,
+  SavedConnectionV2,
+  SavedDeviceNode,
+  SavedGraphicRouteNode,
+  SavedProjectFileV1,
+  SavedProjectFileV2,
+  SavedSheetV2,
+  SupportedProjectFile,
+} from './ProjectFile'
+
+
 
 import type {
   CableDisplayMode,
@@ -72,111 +92,6 @@ type MainView =
   | 'reports'
   | 'settings'
 
-type SavedDeviceNode = {
-  id: string
-  position: { x: number; y: number }
-}
-
-type SavedGraphicRouteNode = {
-  id: string
-  position: { x: number; y: number }
-  data: {
-    signal: Signal
-    width: number
-    leftHeight: number
-    rightHeight: number
-  }
-}
-
-type SavedProjectFileV1 = {
-  format: 'av-engineering-project'
-  formatVersion: 1
-  savedAt: string
-  sourceProject: ProjectData['project']
-  projectDevices: Device[]
-  viewport: Viewport
-  deviceNodes: SavedDeviceNode[]
-  deletedDeviceIds: string[]
-  graphicRoutes: SavedGraphicRouteNode[]
-  edges: CableEdge[]
-}
-
-/*
- * Eén echte fysieke kabel in het project.
- *
- * Deze bestaat maar één keer, ongeacht op hoeveel
- * sheets hij grafisch wordt weergegeven.
- */
-type SavedConnectionV2 = {
-  id: string
-
-  cableNumber: string
-  signal: Signal
-
-  sourceDevice: string
-  sourcePort: string
-  sourceConnector: string
-
-  targetDevice: string
-  targetPort: string
-  targetConnector: string
-}
-
-/*
- * Grafische representatie van een fysieke kabel
- * op één specifieke sheet.
- */
-type SavedCableRepresentationV2 = {
-  connectionId: string
-  displayMode: CableDisplayMode
-  featherLane: number
-}
-
-/*
- * Alles wat specifiek bij één sheet hoort.
- */
-type SavedSheetV2 = {
-  id: string
-  name: string
-  title: string
-  revision: string
-  signals: Signal[] | null
-
-  viewport: Viewport
-
-  deviceNodes: SavedDeviceNode[]
-  graphicRoutes: SavedGraphicRouteNode[]
-
-  cableRepresentations: SavedCableRepresentationV2[]
-}
-
-/*
- * Nieuw multi-sheet projectformaat.
- */
-type SavedProjectFileV2 = {
-  format: 'av-engineering-project'
-  formatVersion: 2
-  savedAt: string
-
-  sourceProject: ProjectData['project']
-  projectDevices: Device[]
-
-  activeSheetId: string
-
-  sheets: SavedSheetV2[]
-  connections: SavedConnectionV2[]
-}
-
-/*
- * Voorlopig blijft de bestaande applicatie nog v1 gebruiken.
- *
- * Hierdoor verandert in deze stap functioneel helemaal niets.
- */
-
-
-type SupportedProjectFile =
-  | SavedProjectFileV1
-  | SavedProjectFileV2
 
 type RecentProjectRecord = {
   id: string
@@ -718,75 +633,7 @@ function createEmptyProjectData(
   }
 }
 
-function parseSupportedProjectFile(
-  value: unknown,
-): SupportedProjectFile {
-  if (
-    typeof value !== 'object' ||
-    value === null
-  ) {
-    throw new Error(
-      'Dit is geen geldig AV-projectbestand.',
-    )
-  }
 
-  const parsed = value as Record<string, unknown>
-
-  if (
-    parsed.format !==
-    'av-engineering-project'
-  ) {
-    throw new Error(
-      'Dit is geen geldig AV-projectbestand.',
-    )
-  }
-
-  if (
-    typeof parsed.formatVersion !== 'number'
-  ) {
-    throw new Error(
-      'Projectversie ontbreekt.',
-    )
-  }
-
-  if (parsed.formatVersion === 1) {
-    const projectFile =
-      value as SavedProjectFileV1
-
-    if (
-      !Array.isArray(projectFile.deviceNodes) ||
-      !Array.isArray(projectFile.graphicRoutes) ||
-      !Array.isArray(projectFile.edges)
-    ) {
-      throw new Error(
-        'Het v1-projectbestand is onvolledig.',
-      )
-    }
-
-    return projectFile
-  }
-
-  if (parsed.formatVersion === 2) {
-    const projectFile =
-      value as SavedProjectFileV2
-
-    if (
-      !Array.isArray(projectFile.projectDevices) ||
-      !Array.isArray(projectFile.sheets) ||
-      !Array.isArray(projectFile.connections)
-    ) {
-      throw new Error(
-        'Het v2-projectbestand is onvolledig.',
-      )
-    }
-
-    return projectFile
-  }
-
-  throw new Error(
-    `Niet-ondersteunde projectversie: ${parsed.formatVersion}`,
-  )
-}
 
 function loadEngineeringSettings(): EngineeringSettings {
   try {
@@ -3272,6 +3119,8 @@ const openProject = useCallback(
   return (
     <div className="app-shell">
 
+<MenuBar/>
+<Ribbon/>
 <Toolbar
   projectName={projectData.project.name}
   toolMode={toolMode}

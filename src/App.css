@@ -2419,3 +2419,136 @@ button {
   font-size: 8px;
   line-height: 10px;
 }
+.app-menu-bar {
+  display: flex;
+  align-items: center;
+  flex: 0 0 32px;
+  height: 32px;
+  padding: 0 8px;
+  box-sizing: border-box;
+
+  border-bottom: 1px solid #d1d5db;
+  background: #f8f9fa;
+}
+
+.app-menu-item {
+  height: 28px;
+  padding: 0 10px;
+
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+
+  color: #1f2937;
+  font: inherit;
+  font-size: 12px;
+
+  cursor: default;
+}
+
+.app-menu-item:hover {
+  background: #e5e7eb;
+}
+
+.app-menu-item:focus-visible {
+  outline: 1px solid #64748b;
+  outline-offset: -1px;
+}
+.app-ribbon {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 66px;
+  height: 66px;
+  box-sizing: border-box;
+
+  padding: 4px 8px 0;
+
+  border-bottom: 1px solid #cbd5e1;
+  background: #f8f9fa;
+
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.ribbon-group {
+  position: relative;
+
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+
+  min-width: max-content;
+  padding: 0 8px 16px;
+
+  border-right: 1px solid #d1d5db;
+}
+
+.ribbon-group:first-child {
+  padding-left: 0;
+}
+
+.ribbon-group:last-child {
+  border-right: 0;
+}
+
+.ribbon-group-title {
+  position: absolute;
+  right: 8px;
+  bottom: 2px;
+  left: 8px;
+
+  color: #6b7280;
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+}
+
+.ribbon-command {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 44px;
+  height: 44px;
+  padding: 2px 6px;
+  box-sizing: border-box;
+
+  border: 1px solid transparent;
+  border-radius: 3px;
+
+  color: #374151;
+  font-size: 9px;
+
+  cursor: default;
+  user-select: none;
+}
+
+.ribbon-command:hover {
+  border-color: #cbd5e1;
+  background: #e9edf2;
+}
+
+.ribbon-command-active {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.ribbon-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  height: 24px;
+  min-width: 24px;
+
+  color: #334155;
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.ribbon-command span:last-child {
+  line-height: 12px;
+  white-space: nowrap;
+}
