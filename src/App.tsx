@@ -153,7 +153,7 @@ type SavedSheetV2 = {
 /*
  * Nieuw multi-sheet projectformaat.
  */
-export type SavedProjectFileV2 = {
+type SavedProjectFileV2 = {
   format: 'av-engineering-project'
   formatVersion: 2
   savedAt: string
@@ -172,7 +172,7 @@ export type SavedProjectFileV2 = {
  *
  * Hierdoor verandert in deze stap functioneel helemaal niets.
  */
-type SavedProjectFile = SavedProjectFileV1
+
 
 type SupportedProjectFile =
   | SavedProjectFileV1
@@ -200,7 +200,7 @@ type HistorySnapshot = {
 }
 
 
-export function buildSavedSheetV2(
+function buildSavedSheetV2(
   sheet: SheetDefinition,
   snapshot: HistorySnapshot,
   viewport: Viewport,
@@ -259,7 +259,7 @@ export function buildSavedSheetV2(
 }
 
 
-export function buildSavedSheetsV2(
+function buildSavedSheetsV2(
   sheets: SheetDefinition[],
   activeSheetId: string,
   currentSnapshot: HistorySnapshot,
@@ -293,7 +293,7 @@ export function buildSavedSheetsV2(
   })
 }
 
-export function restoreCableEdgeV2(
+function restoreCableEdgeV2(
   connection: SavedConnectionV2,
   representation: SavedCableRepresentationV2,
 ): CableEdge {
@@ -326,7 +326,7 @@ export function restoreCableEdgeV2(
   }
 }
 
-export function restoreSavedSheetV2(
+function restoreSavedSheetV2(
   savedSheet: SavedSheetV2,
   connections: SavedConnectionV2[],
   projectDevices: Device[],
@@ -716,6 +716,76 @@ function createEmptyProjectData(
     types: [],
     devices: [],
   }
+}
+
+function parseSupportedProjectFile(
+  value: unknown,
+): SupportedProjectFile {
+  if (
+    typeof value !== 'object' ||
+    value === null
+  ) {
+    throw new Error(
+      'Dit is geen geldig AV-projectbestand.',
+    )
+  }
+
+  const parsed = value as Record<string, unknown>
+
+  if (
+    parsed.format !==
+    'av-engineering-project'
+  ) {
+    throw new Error(
+      'Dit is geen geldig AV-projectbestand.',
+    )
+  }
+
+  if (
+    typeof parsed.formatVersion !== 'number'
+  ) {
+    throw new Error(
+      'Projectversie ontbreekt.',
+    )
+  }
+
+  if (parsed.formatVersion === 1) {
+    const projectFile =
+      value as SavedProjectFileV1
+
+    if (
+      !Array.isArray(projectFile.deviceNodes) ||
+      !Array.isArray(projectFile.graphicRoutes) ||
+      !Array.isArray(projectFile.edges)
+    ) {
+      throw new Error(
+        'Het v1-projectbestand is onvolledig.',
+      )
+    }
+
+    return projectFile
+  }
+
+  if (parsed.formatVersion === 2) {
+    const projectFile =
+      value as SavedProjectFileV2
+
+    if (
+      !Array.isArray(projectFile.projectDevices) ||
+      !Array.isArray(projectFile.sheets) ||
+      !Array.isArray(projectFile.connections)
+    ) {
+      throw new Error(
+        'Het v2-projectbestand is onvolledig.',
+      )
+    }
+
+    return projectFile
+  }
+
+  throw new Error(
+    `Niet-ondersteunde projectversie: ${parsed.formatVersion}`,
+  )
 }
 
 function loadEngineeringSettings(): EngineeringSettings {
@@ -2765,9 +2835,9 @@ const rememberCurrentProject = useCallback(
   
   ])
 
-  const restoreProjectFile = useCallback(
+  const restoreLegacyProjectFileV1 = useCallback(
     (
-      projectFile: SavedProjectFile,
+      projectFile: SavedProjectFileV1,
       sourceName: string,
     ) => {
       const restoredProjectDevices =
@@ -2778,12 +2848,12 @@ const rememberCurrentProject = useCallback(
       const legacyLibraryTypes =
         'libraryTypes' in projectFile &&
         Array.isArray(
-          (projectFile as SavedProjectFile & {
+          (projectFile as SavedProjectFileV1 & {
             libraryTypes?: DeviceType[]
           }).libraryTypes,
         )
           ? (
-              projectFile as SavedProjectFile & {
+              projectFile as SavedProjectFileV1 & {
                 libraryTypes: DeviceType[]
               }
             ).libraryTypes
@@ -3099,13 +3169,13 @@ const restoreSupportedProjectFile = useCallback(
       return
     }
 
-    restoreProjectFile(
+    restoreLegacyProjectFileV1(
       projectFile,
       sourceName,
     )
   },
   [
-    restoreProjectFile,
+    restoreLegacyProjectFileV1,
     restoreProjectFileV2,
   ],
 )
@@ -3155,103 +3225,41 @@ const restoreSupportedProjectFile = useCallback(
 )
 
 
+const openProject = useCallback(
+  async (selectedFile: File) => {
+    try {
+      const rawText =
+        await selectedFile.text()
 
+      const parsed: unknown =
+        JSON.parse(rawText)
 
+      const projectFile =
+        parseSupportedProjectFile(parsed)
 
-  const openProject = useCallback(
-    async (selectedFile: File) => {
-      try {
-        const rawText = await selectedFile.text()
-        const parsed: unknown = JSON.parse(rawText)
-
-        if (
-          typeof parsed !== 'object' ||
-          parsed === null ||
-          !('format' in parsed) ||
-          !('formatVersion' in parsed)
-        ) {
-          throw new Error('Dit is geen geldig AV-projectbestand.')
-        }
-
-       if (
-  !('format' in parsed) ||
-  parsed.format !== 'av-engineering-project'
-) {
-  throw new Error('Dit is geen geldig AV-projectbestand.')
-}
-
-if (
-  !('formatVersion' in parsed) ||
-  typeof parsed.formatVersion !== 'number'
-) {
-  throw new Error('Projectversie ontbreekt.')
-}
-
-if (parsed.formatVersion === 1) {
-  const projectFile =
-    parsed as SavedProjectFileV1
-
-  if (
-    !Array.isArray(projectFile.deviceNodes) ||
-    !Array.isArray(projectFile.graphicRoutes) ||
-    !Array.isArray(projectFile.edges)
-  ) {
-    throw new Error(
-      'Het v1-projectbestand is onvolledig.',
-    )
-  }
-
-restoreSupportedProjectFile(
-  projectFile,
-  selectedFile.name,
-)
-
-return
-}
-
-if (parsed.formatVersion === 2) {
-  const projectFile =
-    parsed as SavedProjectFileV2
-
-  if (
-    !Array.isArray(projectFile.projectDevices) ||
-    !Array.isArray(projectFile.sheets) ||
-    !Array.isArray(projectFile.connections)
-  ) {
-    throw new Error(
-      'Het v2-projectbestand is onvolledig.',
-    )
-  }
-
-restoreSupportedProjectFile(
-  projectFile,
-  selectedFile.name,
-)
-
-return
-}
-
-throw new Error(
-  `Niet-ondersteunde projectversie: ${parsed.formatVersion}`,
-)
-
-
-      } catch (openError: unknown) {
-        setStatus(
-          openError instanceof Error
-            ? `Openen mislukt: ${openError.message}`
-            : 'Openen mislukt door een onbekende fout.',
-        )
-      } finally {
-        if (openProjectInputRef.current) {
-          openProjectInputRef.current.value = ''
-        }
+      restoreSupportedProjectFile(
+        projectFile,
+        selectedFile.name,
+      )
+    } catch (openError: unknown) {
+      setStatus(
+        openError instanceof Error
+          ? `Openen mislukt: ${openError.message}`
+          : 'Openen mislukt door een onbekende fout.',
+      )
+    } finally {
+      if (openProjectInputRef.current) {
+        openProjectInputRef.current.value = ''
       }
-    },
-            [
-              restoreSupportedProjectFile,
-            ],
-  )
+    }
+  },
+  [
+    restoreSupportedProjectFile,
+  ],
+)
+
+
+
 
   if (error) {
     return <main><h1>AV Engineering Platform</h1><p>Fout: {error}</p></main>
